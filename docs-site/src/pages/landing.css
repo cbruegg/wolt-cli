@@ -141,6 +141,27 @@
 .wcli-home .codeblock pre,
 .wcli-home .terminal__body { max-width: 100%; overflow-x: auto; }
 
+/* Infima (Docusaurus) sets `pre { background-color: var(--ifm-pre-background) }`
+   which is light-grey on the light theme. Strip it from every <pre> inside
+   the landing page so the dark wrapper (.terminal / .codeblock) shows through.
+   Snippets re-assert their own dark bg below. */
+.wcli-home pre {
+  background-color: transparent;
+  color: var(--term-fg);
+  margin: 0;
+}
+.wcli-home pre code,
+.wcli-home pre code * {
+  background-color: transparent;
+  border: 0;
+  padding: 0;
+  color: inherit;
+}
+.wcli-home .terminal,
+.wcli-home .codeblock { background-color: var(--term-bg); }
+.wcli-home .snippet { background-color: var(--term-bg); color: var(--term-fg); }
+.wcli-home .snippet--dark { background-color: var(--step-snippet-bg); }
+
 .wcli-home img { display: block; max-width: 100%; }
 .wcli-home a { color: inherit; text-decoration: none; }
 .wcli-home code,
