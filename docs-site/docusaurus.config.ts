@@ -23,6 +23,9 @@ const config: Config = {
   projectName: 'wolt-cli',
 
   onBrokenLinks: 'throw',
+  // Anchor links target IDs rendered by the home-page React component,
+  // which Docusaurus's static markdown anchor scanner can't see.
+  onBrokenAnchors: 'ignore',
 
   // Even if you don't use internationalization, you can use this field to set
   // useful metadata like html lang. For example, if your site is Chinese, you
@@ -70,6 +73,7 @@ const config: Config = {
   themeConfig: {
     image: 'img/docusaurus-social-card.jpg',
     colorMode: {
+      defaultMode: 'light',
       respectPrefersColorScheme: true,
     },
     navbar: {
@@ -79,19 +83,30 @@ const config: Config = {
         src: 'img/logo.png',
       },
       items: [
+        {to: '/#features', label: 'Features', position: 'left'},
+        {to: '/#install', label: 'Install', position: 'left'},
         {
           type: 'docSidebar',
           sidebarId: 'tutorialSidebar',
           position: 'left',
           label: 'Docs',
         },
-        {to: '/docs/cli-installation', label: 'Start Here', position: 'left'},
-        {to: '/docs/cli-cart-checkout', label: 'Cart + Checkout', position: 'left'},
-        {to: '/docs/cli-orders-profile', label: 'Profile', position: 'left'},
+        {to: '/#example', label: 'Example', position: 'left'},
+        {to: '/#commands', label: 'Commands', position: 'left'},
+        {to: '/#faq', label: 'FAQ', position: 'left'},
+        {to: '/#support', label: 'Support', position: 'left'},
+        {
+          href: 'https://buymeacoffee.com/mekedron',
+          label: 'Donate',
+          position: 'right',
+          className: 'navbar-donate',
+          'aria-label': 'Buy me a coffee',
+        },
         {
           href: 'https://github.com/mekedron/wolt-cli',
-          label: 'GitHub',
           position: 'right',
+          className: 'navbar-github',
+          'aria-label': 'GitHub repository',
         },
       ],
     },

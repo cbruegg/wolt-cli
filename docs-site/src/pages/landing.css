@@ -119,6 +119,28 @@
 }
 
 .wcli-home, .wcli-home *, .wcli-home *::before, .wcli-home *::after { box-sizing: border-box; }
+.wcli-home { overflow-x: clip; }   /* safety net for any escapees */
+
+/* Grid items default to min-width: auto and grow with content (long <pre>
+   lines, nowrap labels). Force them shrinkable. */
+.wcli-home .features__grid > *,
+.wcli-home .install__after > *,
+.wcli-home .steps > *,
+.wcli-home .step > *,
+.wcli-home .cmd-grid > *,
+.wcli-home .flags__grid > *,
+.wcli-home .tabs__panels,
+.wcli-home .tabs__panel,
+.wcli-home .codeblock { min-width: 0; }
+
+/* Make sure every scrollable code surface is actually scrollable
+   instead of pushing its parent wider. */
+.wcli-home pre,
+.wcli-home .snippet,
+.wcli-home .codeblock,
+.wcli-home .codeblock pre,
+.wcli-home .terminal__body { max-width: 100%; overflow-x: auto; }
+
 .wcli-home img { display: block; max-width: 100%; }
 .wcli-home a { color: inherit; text-decoration: none; }
 .wcli-home code,
@@ -518,7 +540,10 @@
   padding: 1px 5px;
   border-radius: 4px;
   color: var(--fg-2);
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
+.wcli-home .feature p { word-break: break-word; overflow-wrap: anywhere; }
 .wcli-home .feature__cmd {
   display: block;
   margin-top: 6px;
@@ -529,6 +554,8 @@
   border-radius: 8px;
   white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis;
+  max-width: 100%;
+  min-width: 0;
 }
 
 /* ============================================================
@@ -551,6 +578,7 @@
 }
 
 .wcli-home .tabs {
+  display: block;            /* override Infima's .tabs { display: flex } */
   max-width: 1040px;
   margin: 0 auto;
   background: var(--bg);
@@ -558,6 +586,7 @@
   border-radius: var(--r-lg);
   padding: 8px;
 }
+.wcli-home .tabs__panels { display: block; }
 .wcli-home .tabs__bar {
   display: flex; gap: 4px;
   padding: 4px;
@@ -748,13 +777,19 @@
   color: var(--blue-deep);
   padding: 0;
 }
-.wcli-home .cmd-card p { font-size: 13px; color: var(--muted); margin: 0; }
+.wcli-home .cmd-card p {
+  font-size: 13px; color: var(--muted); margin: 0;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
 .wcli-home .cmd-card p code {
   background: var(--bg-2);
   padding: 0 4px;
   border-radius: 3px;
   font-size: 12px;
   color: var(--fg-2);
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .wcli-home .flags {
@@ -800,9 +835,13 @@
   color: var(--blue-deep);
   background: transparent;
   padding: 0;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 .wcli-home .flags__grid > div span {
   font-size: 12px; color: var(--muted);
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 /* ============================================================

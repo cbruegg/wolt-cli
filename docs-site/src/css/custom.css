@@ -94,3 +94,91 @@ body {
   border-color: rgba(0, 125, 152, 0.4);
   transform: translateY(-1px);
 }
+
+/* ============================================================
+   Navbar: Donate + GitHub buttons (match landing-page design)
+   ============================================================ */
+
+.navbar__item.navbar-donate,
+.navbar-donate {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  margin: 0 6px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #FFDD00 0%, #FFB800 100%);
+  color: #1A1300 !important;
+  font-weight: 700;
+  font-size: 13.5px;
+  letter-spacing: -0.005em;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04),
+    0 6px 14px -8px rgba(255, 180, 0, 0.55);
+  transition: transform 0.12s ease, box-shadow 0.15s ease,
+    background 0.15s ease;
+}
+.navbar-donate:hover {
+  background: linear-gradient(135deg, #FFE733 0%, #FFC833 100%);
+  color: #1A1300 !important;
+  transform: translateY(-1px);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04),
+    0 10px 20px -8px rgba(255, 180, 0, 0.7);
+  text-decoration: none;
+}
+.navbar-donate::before {
+  content: '';
+  width: 14px;
+  height: 14px;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' d='M5 10h12v5a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4v-5Zm12 1h2a2.5 2.5 0 0 1 0 5h-2M8 3c0 1 1 1 1 2s-1 1-1 2M12 3c0 1 1 1 1 2s-1 1-1 2'/></svg>") no-repeat center / contain;
+          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' d='M5 10h12v5a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4v-5Zm12 1h2a2.5 2.5 0 0 1 0 5h-2M8 3c0 1 1 1 1 2s-1 1-1 2M12 3c0 1 1 1 1 2s-1 1-1 2'/></svg>") no-repeat center / contain;
+}
+
+.navbar-github {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  margin: 0 4px;
+  border-radius: 999px;
+  border: 1px solid rgba(18, 26, 42, 0.18);
+  background: transparent;
+  color: var(--ifm-font-color-base);
+  transition: background 0.15s ease, border-color 0.15s ease,
+    transform 0.12s ease;
+  font-size: 0;
+}
+.navbar-github:hover {
+  background: rgba(18, 26, 42, 0.06);
+  border-color: rgba(18, 26, 42, 0.45);
+  color: var(--ifm-font-color-base);
+  text-decoration: none;
+}
+.navbar-github::before {
+  content: '';
+  width: 18px;
+  height: 18px;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 .5A11.5 11.5 0 0 0 .5 12a11.5 11.5 0 0 0 7.86 10.92c.57.1.78-.25.78-.55v-2.1c-3.2.7-3.87-1.36-3.87-1.36-.53-1.34-1.3-1.7-1.3-1.7-1.06-.72.08-.71.08-.71 1.17.08 1.79 1.2 1.79 1.2 1.04 1.78 2.73 1.27 3.4.97.1-.75.4-1.27.74-1.56-2.55-.29-5.24-1.28-5.24-5.7 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.46.11-3.04 0 0 .97-.31 3.18 1.19a11 11 0 0 1 5.8 0c2.2-1.5 3.17-1.19 3.17-1.19.63 1.58.23 2.75.12 3.04.73.81 1.18 1.84 1.18 3.1 0 4.43-2.7 5.4-5.27 5.69.41.36.78 1.05.78 2.12v3.14c0 .3.21.66.79.55A11.5 11.5 0 0 0 23.5 12 11.5 11.5 0 0 0 12 .5Z'/></svg>") no-repeat center / contain;
+          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 .5A11.5 11.5 0 0 0 .5 12a11.5 11.5 0 0 0 7.86 10.92c.57.1.78-.25.78-.55v-2.1c-3.2.7-3.87-1.36-3.87-1.36-.53-1.34-1.3-1.7-1.3-1.7-1.06-.72.08-.71.08-.71 1.17.08 1.79 1.2 1.79 1.2 1.04 1.78 2.73 1.27 3.4.97.1-.75.4-1.27.74-1.56-2.55-.29-5.24-1.28-5.24-5.7 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.46.11-3.04 0 0 .97-.31 3.18 1.19a11 11 0 0 1 5.8 0c2.2-1.5 3.17-1.19 3.17-1.19.63 1.58.23 2.75.12 3.04.73.81 1.18 1.84 1.18 3.1 0 4.43-2.7 5.4-5.27 5.69.41.36.78 1.05.78 2.12v3.14c0 .3.21.66.79.55A11.5 11.5 0 0 0 23.5 12 11.5 11.5 0 0 0 12 .5Z'/></svg>") no-repeat center / contain;
+}
+
+[data-theme='dark'] .navbar-github {
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #e6f3fa;
+}
+[data-theme='dark'] .navbar-github:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+/* Hide the labels Donate/GitHub from collapsing too aggressively on mobile */
+@media (max-width: 996px) {
+  .navbar-donate,
+  .navbar-github {
+    margin: 4px 8px;
+  }
+}
