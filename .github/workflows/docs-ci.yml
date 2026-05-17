@@ -2,9 +2,17 @@ name: Docs CI
 
 on:
   pull_request:
+    paths:
+      - 'docs-site/**'
+      - 'docs/**'
+      - '.github/workflows/docs-ci.yml'
   push:
     branches:
       - main
+    paths:
+      - 'docs-site/**'
+      - 'docs/**'
+      - '.github/workflows/docs-ci.yml'
 
 permissions:
   contents: read

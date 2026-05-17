@@ -2,9 +2,21 @@ name: Go CI
 
 on:
   pull_request:
+    paths-ignore:
+      - 'docs-site/**'
+      - 'docs/**'
+      - '**.md'
+      - '.github/workflows/docs-ci.yml'
+      - '.github/workflows/docs-deploy.yml'
   push:
     branches:
       - main
+    paths-ignore:
+      - 'docs-site/**'
+      - 'docs/**'
+      - '**.md'
+      - '.github/workflows/docs-ci.yml'
+      - '.github/workflows/docs-deploy.yml'
 
 jobs:
   test:

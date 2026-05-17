@@ -3,6 +3,12 @@ name: CodeQL
 on:
   pull_request:
     branches: ["main"]
+    paths-ignore:
+      - 'docs-site/**'
+      - 'docs/**'
+      - '**.md'
+      - '.github/workflows/docs-ci.yml'
+      - '.github/workflows/docs-deploy.yml'
   schedule:
     - cron: "32 3 * * 5"
 
