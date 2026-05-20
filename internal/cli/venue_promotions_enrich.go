@@ -183,7 +183,7 @@ func enrichVenueRowsWithDynamicPromotions(
 				}
 			}
 		}
-		payload, err := deps.Wolt.VenuePageStatic(ctx, slug)
+		payload, err := cachedVenuePageStatic(ctx, deps, slug)
 		lastStaticRequestAt = time.Now()
 		if err != nil || len(payload) == 0 {
 			return false

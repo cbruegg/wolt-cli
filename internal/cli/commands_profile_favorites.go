@@ -268,7 +268,7 @@ func resolveFavoriteVenueReference(
 		}, nil
 	}
 
-	if payload, err := deps.Wolt.VenuePageStatic(ctx, candidate); err == nil {
+	if payload, err := cachedVenuePageStatic(ctx, deps, candidate); err == nil {
 		reference := favoriteVenueReference{
 			VenueID: strings.TrimSpace(asString(coalesceAny(
 				asMap(payload["venue"])["id"],

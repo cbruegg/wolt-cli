@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -367,6 +368,10 @@ func runCLI(t *testing.T, args ...string) (int, string) {
 
 func runCLIWithDeps(t *testing.T, deps cli.Dependencies, args ...string) (int, string) {
 	t.Helper()
+	// Isolate every e2e test from the on-disk slug→venue-id cache so an
+	// earlier test run can't satisfy a venue resolution and skip the
+	// upstream call the next test asserts on.
+	t.Setenv("WOLT_SLUG_CACHE_PATH", filepath.Join(t.TempDir(), "slug-cache.json"))
 	ensureDefaultLocationLookupAuth(args, deps.Profiles)
 	if woltMock, ok := deps.Wolt.(*mockWolt); ok {
 		ensureDefaultDeliveryInfoList(woltMock, deps.Profiles)

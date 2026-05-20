@@ -254,8 +254,14 @@ func resolveVenueReference(ctx context.Context, deps Dependencies, raw string) (
 	}
 	ref.VenueSlug = input
 	ref.VenueID = input
+	// Local cache short-circuits the ~250–500 ms VenuePageStatic round-trip
+	// once we've resolved a slug at least once. See internal/cli/slug_cache.go.
+	if cachedID, ok := lookupCachedVenueID(input); ok {
+		ref.VenueID = cachedID
+		return ref, nil
+	}
 	if deps.Wolt != nil {
-		if payload, err := deps.Wolt.VenuePageStatic(ctx, input); err == nil {
+		if payload, err := cachedVenuePageStatic(ctx, deps, input); err == nil {
 			if id := venueIDFromPayload(payload); id != "" {
 				ref.VenueID = id
 			}

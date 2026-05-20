@@ -225,7 +225,7 @@ func buildCheckoutPayload(
 		} else {
 			warnings = append(warnings, fmt.Sprintf("unable to load venue assortment payload for category mapping (slug=%s)", venueSlug))
 		}
-		if payload, err := deps.Wolt.VenuePageStatic(ctx, venueSlug); err == nil {
+		if payload, err := cachedVenuePageStatic(ctx, deps, venueSlug); err == nil {
 			mergeCheckoutCategoryIndexes(categoryIDsByItemID, buildCheckoutCategoryIDIndex(payload))
 		}
 	}

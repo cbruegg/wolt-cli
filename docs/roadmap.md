@@ -25,10 +25,15 @@ both the slug and the item id. Falls back to the explicit
 `<venue> <item-id>` shape when the single arg is not a URL with both
 parts.
 
-Still open from this work:
-
-- **Local cache of `slug → id`** so repeated `--query` and URL-driven
-  flows skip the static venue lookup that resolves the venue id.
+Slug → id (and full static-page payload) cache shipped too: stored at
+`~/.wolt/.wolt-slug-cache.json` with a 24 h TTL, wired through
+`cachedVenuePageStatic` so every command that consults the upstream
+`/pages/venue/slug/<slug>/static` endpoint (resolve, venue show, venue
+menu, venue item, checkout, favorites, dynamic-promotion enrichment)
+short-circuits the ~200–500 ms call on a fresh hit. `wolt logout`
+wipes it; `WOLT_SLUG_CACHE_PATH` overrides the location. Visible win:
+`wolt venue menu <slug> --query` dropped from ~790 ms cold to ~170 ms
+warm on the live Helsinki feed (4.6× faster).
 
 ## Discovery enrichment beyond tagline + top offer
 

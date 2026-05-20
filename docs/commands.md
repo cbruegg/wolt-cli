@@ -233,6 +233,11 @@ Available on every leaf command:
 - `--no-color`
 - `--verbose` — prints the upstream HTTP request trace and detailed error envelopes
 
+## On-disk caches
+
+- `~/.wolt/.wolt-config.json` (`0600`) — the saved account.
+- `~/.wolt/.wolt-slug-cache.json` (`0600`) — venue slug → id + static-page payload cache, 24 h TTL. Eliminates the ~200–500 ms static-page lookup on repeated `cart add`, `venue menu`, `venue item`, and `checkout` flows against the same venue. Wiped automatically by `wolt logout`. Override the path with `WOLT_SLUG_CACHE_PATH`.
+
 Location-aware commands additionally accept `--lat <float>` and `--lon <float>`
 (must be supplied together). If no override is given, the address attached
 to the logged-in Wolt account is used.

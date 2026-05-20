@@ -35,6 +35,7 @@ func TestNormalizeVenueInput(t *testing.T) {
 }
 
 func TestResolveVenueReferenceSlugQueriesStaticPage(t *testing.T) {
+	withIsolatedSlugCache(t)
 	calls := 0
 	wolt := &testWoltAPI{
 		venuePageStaticFn: func(_ context.Context, slug string) (map[string]any, error) {
@@ -63,6 +64,7 @@ func TestResolveVenueReferenceSlugQueriesStaticPage(t *testing.T) {
 }
 
 func TestResolveVenueReferenceURLExtractsSlugThenResolves(t *testing.T) {
+	withIsolatedSlugCache(t)
 	wolt := &testWoltAPI{
 		venuePageStaticFn: func(_ context.Context, slug string) (map[string]any, error) {
 			if slug != "wolt-market-niittari" {
@@ -86,6 +88,7 @@ func TestResolveVenueReferenceURLExtractsSlugThenResolves(t *testing.T) {
 }
 
 func TestResolveVenueReferenceObjectIDReverseLookup(t *testing.T) {
+	withIsolatedSlugCache(t)
 	wolt := &testWoltAPI{
 		restaurantByIDFn: func(_ context.Context, id string) (*domain.Restaurant, error) {
 			if id != "6123456789abcdef01234567" {
@@ -113,6 +116,7 @@ func TestResolveVenueReferenceObjectIDReverseLookup(t *testing.T) {
 }
 
 func TestResolveVenueReferenceEmptyInput(t *testing.T) {
+	withIsolatedSlugCache(t)
 	deps := Dependencies{}
 
 	ref, err := resolveVenueReference(context.Background(), deps, "   ")
@@ -183,6 +187,7 @@ func TestResolveItemReference(t *testing.T) {
 }
 
 func TestResolveVenueReferenceFallsBackToInputWhenStaticFails(t *testing.T) {
+	withIsolatedSlugCache(t)
 	wolt := &testWoltAPI{
 		venuePageStaticFn: func(_ context.Context, _ string) (map[string]any, error) {
 			return nil, context.DeadlineExceeded

@@ -111,7 +111,7 @@ func newVenueCategoriesCommand(deps Dependencies) *cobra.Command {
 
 			venueID := fallbackString(venueRef.VenueID, strings.TrimSpace(slug))
 			staticWarnings := []string{}
-			if payload, err := deps.Wolt.VenuePageStatic(cmd.Context(), slug); err == nil {
+			if payload, err := cachedVenuePageStatic(cmd.Context(), deps, slug); err == nil {
 				if resolvedID := venueIDFromPayload(payload); strings.TrimSpace(resolvedID) != "" {
 					venueID = strings.TrimSpace(resolvedID)
 				}
@@ -261,7 +261,7 @@ func newVenueMenuCommand(deps Dependencies) *cobra.Command {
 			payloads := []map[string]any{}
 			warnings := []string{}
 			assortmentPayload := map[string]any{}
-			if payload, err := deps.Wolt.VenuePageStatic(cmd.Context(), slug); err == nil {
+			if payload, err := cachedVenuePageStatic(cmd.Context(), deps, slug); err == nil {
 				payloads = append(payloads, payload)
 				if resolvedID := venueIDFromPayload(payload); strings.TrimSpace(resolvedID) != "" {
 					venueID = strings.TrimSpace(resolvedID)
@@ -603,7 +603,7 @@ func resolveVenueBySlug(
 		warnings = append(warnings, "venue catalog lookup failed; using static venue payload fallback")
 	}
 
-	staticPayload, staticErr := deps.Wolt.VenuePageStatic(ctx, slug)
+	staticPayload, staticErr := cachedVenuePageStatic(ctx, deps, slug)
 	if staticErr != nil {
 		if itemErr != nil {
 			return nil, "", map[string]any{}, warnings, itemErr
@@ -964,7 +964,7 @@ func resolveVenueItemPayloadBySlug(
 		warnings = append(warnings, fallbackWarnings...)
 	}
 
-	if payload, err := deps.Wolt.VenuePageStatic(ctx, venueSlug); err == nil {
+	if payload, err := cachedVenuePageStatic(ctx, deps, venueSlug); err == nil {
 		if resolvedID := venueIDFromPayload(payload); strings.TrimSpace(resolvedID) != "" {
 			venueID = strings.TrimSpace(resolvedID)
 		}

@@ -129,6 +129,10 @@ func newLogoutCommand(deps Dependencies) *cobra.Command {
 					}
 				}
 			}
+			// Drop the slug→venue-id cache too: a different account may have
+			// different locale / coverage and stale entries could mislead the
+			// next session.
+			clearVenueSlugCache()
 			data := map[string]any{"logged_out": true}
 			if format == output.FormatTable {
 				return writeTable(cmd, output.RenderTable("Logout", []string{"Field", "Value"}, [][]string{{"Saved credentials", "removed"}}), flags.Output)
