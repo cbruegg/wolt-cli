@@ -14,26 +14,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newProfileCommand(deps Dependencies) *cobra.Command {
-	profile := &cobra.Command{
-		Use:   "profile",
-		Short: "Inspect profile, orders, address, and payment details.",
-	}
-	profile.AddCommand(newProfileStatusCommand(deps))
-	profile.AddCommand(newProfileShowCommand(deps))
-	profile.AddCommand(newProfileOrdersCommand(deps))
-	profile.AddCommand(newProfileAddressesCommand(deps))
-	profile.AddCommand(newProfilePaymentsCommand(deps))
-	profile.AddCommand(newProfileFavoritesCommand(deps))
-	return profile
-}
-
-func newProfileStatusCommand(deps Dependencies) *cobra.Command {
-	cmd := newAuthStatusCommand(deps)
-	cmd.Short = "Check whether selected credentials are authenticated."
-	return cmd
-}
-
 func newProfileShowCommand(deps Dependencies) *cobra.Command {
 	var flags globalFlags
 	var include string

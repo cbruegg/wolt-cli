@@ -15,11 +15,9 @@ import (
 var objectIDPattern = regexp.MustCompile(`^[a-f0-9]{24}$`)
 
 func newCheckoutCommand(deps Dependencies) *cobra.Command {
-	checkout := &cobra.Command{
-		Use:   "checkout",
-		Short: "Inspect checkout pricing projections (preview only).",
-	}
-	checkout.AddCommand(newCheckoutPreviewCommand(deps))
+	checkout := newCheckoutPreviewCommand(deps)
+	checkout.Use = "checkout"
+	checkout.Short = "Preview checkout pricing without placing an order."
 	return checkout
 }
 

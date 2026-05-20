@@ -14,30 +14,6 @@ const (
 	profileOrdersMaxLimit     = 50
 )
 
-func newProfileOrdersCommand(deps Dependencies) *cobra.Command {
-	var flags globalFlags
-	var limit int
-	var pageToken string
-	var statusFilter string
-
-	cmd := &cobra.Command{
-		Use:     "orders",
-		Aliases: []string{"history", "order-history"},
-		Short:   "Browse account order history.",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runProfileOrdersList(cmd, deps, flags, limit, pageToken, statusFilter)
-		},
-	}
-
-	cmd.Flags().IntVar(&limit, "limit", profileOrdersDefaultLimit, "Number of orders to return per page (1-50).")
-	cmd.Flags().StringVar(&pageToken, "page-token", "", "Pagination token for older orders.")
-	cmd.Flags().StringVar(&statusFilter, "status", "", "Filter orders by status (case-insensitive).")
-	addGlobalFlags(cmd, &flags)
-	cmd.AddCommand(newProfileOrdersListCommand(deps))
-	cmd.AddCommand(newProfileOrdersShowCommand(deps))
-	return cmd
-}
-
 func newProfileOrdersListCommand(deps Dependencies) *cobra.Command {
 	var flags globalFlags
 	var limit int

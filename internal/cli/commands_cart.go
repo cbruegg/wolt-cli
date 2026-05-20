@@ -11,11 +11,9 @@ import (
 )
 
 func newCartCommand(deps Dependencies) *cobra.Command {
-	cart := &cobra.Command{
-		Use:   "cart",
-		Short: "Inspect and update basket contents.",
-	}
-	cart.AddCommand(newCartShowCommand(deps))
+	cart := newCartShowCommand(deps)
+	cart.Use = "cart"
+	cart.Short = "Show and update cart contents."
 	cart.AddCommand(newCartAddCommand(deps))
 	cart.AddCommand(newCartRemoveCommand(deps))
 	cart.AddCommand(newCartClearCommand(deps))
@@ -122,7 +120,7 @@ func newCartAddCommand(deps Dependencies) *cobra.Command {
 	var lonSet bool
 
 	cmd := &cobra.Command{
-		Use:   "add <venue-id> <item-id>",
+		Use:   "add <venue> <item-id>",
 		Short: "Add an item to basket.",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -140,9 +138,15 @@ func newCartAddCommand(deps Dependencies) *cobra.Command {
 			}
 
 			venueID := strings.TrimSpace(args[0])
+			if resolved, resolveErr := resolveVenueReference(cmd.Context(), deps, venueID); resolveErr == nil {
+				venueID = resolved.VenueID
+				if strings.TrimSpace(venueSlug) == "" {
+					venueSlug = resolved.VenueSlug
+				}
+			}
 			itemID := strings.TrimSpace(args[1])
 			if venueID == "" || itemID == "" {
-				return fmt.Errorf("venue-id and item-id are required")
+				return fmt.Errorf("venue and item-id are required")
 			}
 
 			var latPtr *float64

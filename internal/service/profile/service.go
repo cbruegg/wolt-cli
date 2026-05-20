@@ -38,26 +38,13 @@ func (r *Resolver) Find(ctx context.Context, profileName string) (domain.Profile
 	if err != nil {
 		return domain.Profile{}, err
 	}
-	if strings.TrimSpace(profileName) == "" {
-		for _, profile := range cfg.Profiles {
-			if profile.IsDefault {
-				return profile, nil
-			}
-		}
+	if len(cfg.Profiles) == 0 {
 		return domain.Profile{}, ErrDefaultProfileNotFound
 	}
-
-	want := strings.ToLower(strings.TrimSpace(profileName))
-	for _, profile := range cfg.Profiles {
-		if strings.ToLower(profile.Name) == want {
-			return profile, nil
-		}
+	if profileName != "" && !strings.EqualFold(strings.TrimSpace(profileName), "default") {
+		return domain.Profile{}, fmt.Errorf("%w: only the single default account is supported", ErrProfileNotFound)
 	}
-	available := make([]string, 0, len(cfg.Profiles))
-	for _, profile := range cfg.Profiles {
-		available = append(available, profile.Name)
-	}
-	return domain.Profile{}, fmt.Errorf("%w: %s (available: %s)", ErrProfileNotFound, want, strings.Join(available, ", "))
+	return cfg.Profiles[0], nil
 }
 
 // NewFileResolver constructs a resolver from local config file.

@@ -60,26 +60,80 @@ func (s *Store) Load(_ context.Context) (domain.Config, error) {
 	if err := json.Unmarshal(payload, &cfg); err != nil {
 		return domain.Config{}, fmt.Errorf("%w: %v", ErrInvalidConfig, err)
 	}
+	normalized, err := normalizeSingleAccountConfig(cfg)
+	if err != nil {
+		return domain.Config{}, err
+	}
+	return normalized, nil
+}
+
+func normalizeSingleAccountConfig(cfg domain.Config) (domain.Config, error) {
+	if accountHasData(cfg.Account) {
+		profile := profileFromAccount(cfg.Account)
+		return domain.Config{Account: accountFromProfile(profile), Profiles: []domain.Profile{profile}}, nil
+	}
 	if len(cfg.Profiles) == 0 {
 		return domain.Config{}, fmt.Errorf("%w: profiles is empty", ErrInvalidConfig)
 	}
-	return cfg, nil
+	selected := cfg.Profiles[0]
+	for _, profile := range cfg.Profiles {
+		if profile.IsDefault {
+			selected = profile
+			break
+		}
+	}
+	selected.Name = "default"
+	selected.IsDefault = true
+	return domain.Config{Account: accountFromProfile(selected), Profiles: []domain.Profile{selected}}, nil
 }
 
 // Save writes a configuration payload.
 func (s *Store) Save(_ context.Context, cfg domain.Config) error {
-	if len(cfg.Profiles) == 0 {
-		return fmt.Errorf("%w: profiles is empty", ErrInvalidConfig)
+	normalized, err := normalizeSingleAccountConfig(cfg)
+	if err != nil {
+		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		return fmt.Errorf("create config directory: %w", err)
 	}
-	payload, err := json.Marshal(cfg)
+	payload, err := json.Marshal(domain.Config{Account: normalized.Account})
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}
-	if err := os.WriteFile(s.path, payload, 0o644); err != nil {
+	if err := os.WriteFile(s.path, payload, 0o600); err != nil {
 		return fmt.Errorf("write config: %w", err)
 	}
+	_ = os.Chmod(s.path, 0o600)
 	return nil
+}
+
+func accountHasData(account domain.Account) bool {
+	return account.WToken != "" ||
+		account.WRefreshToken != "" ||
+		len(account.Cookies) > 0 ||
+		account.WoltAddressID != "" ||
+		account.Location.Lat != 0 ||
+		account.Location.Lon != 0
+}
+
+func profileFromAccount(account domain.Account) domain.Profile {
+	return domain.Profile{
+		Name:          "default",
+		IsDefault:     true,
+		Location:      account.Location,
+		WToken:        account.WToken,
+		WRefreshToken: account.WRefreshToken,
+		Cookies:       account.Cookies,
+		WoltAddressID: account.WoltAddressID,
+	}
+}
+
+func accountFromProfile(profile domain.Profile) domain.Account {
+	return domain.Account{
+		Location:      profile.Location,
+		WToken:        profile.WToken,
+		WRefreshToken: profile.WRefreshToken,
+		Cookies:       profile.Cookies,
+		WoltAddressID: profile.WoltAddressID,
+	}
 }

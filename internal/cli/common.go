@@ -37,48 +37,63 @@ type globalFlags struct {
 const sharedGlobalFlagAnnotation = "wolt_cli_shared_global"
 
 func addGlobalFlags(cmd *cobra.Command, flags *globalFlags) {
-	addSharedGlobalFlag(cmd, "format", func() {
+	_ = addSharedGlobalFlag(cmd, "format", func() {
 		cmd.Flags().StringVar(&flags.Format, "format", "table", "Output format: table, json, or yaml.")
 	})
-	addSharedGlobalFlag(cmd, "profile", func() {
-		cmd.Flags().StringVar(&flags.Profile, "profile", "", "Profile name for saved local defaults.")
-	})
-	addSharedGlobalFlag(cmd, "address", func() {
+	if addSharedGlobalFlag(cmd, "profile", func() {
+		cmd.Flags().StringVar(&flags.Profile, "profile", "", "Legacy profile selector; only default is supported.")
+	}) {
+		markHidden(cmd, "profile")
+	}
+	_ = addSharedGlobalFlag(cmd, "address", func() {
 		cmd.Flags().StringVar(&flags.Address, "address", "", "Temporary address override for this command. Geocoded to coordinates. Cannot be combined with --lat/--lon.")
 	})
-	addSharedGlobalFlag(cmd, "locale", func() {
+	_ = addSharedGlobalFlag(cmd, "locale", func() {
 		cmd.Flags().StringVar(&flags.Locale, "locale", "en-FI", "Response locale in BCP-47 format, for example en-FI.")
 	})
-	addSharedGlobalFlag(cmd, "no-color", func() {
+	_ = addSharedGlobalFlag(cmd, "no-color", func() {
 		cmd.Flags().BoolVar(&flags.NoColor, "no-color", false, "Disable ANSI color codes in table output.")
 	})
-	addSharedGlobalFlag(cmd, "wtoken", func() {
-		cmd.Flags().StringVar(&flags.WToken, "wtoken", "", "Wolt token for authenticated endpoints (JWT, Bearer value, or payload with accessToken).")
-	})
-	addSharedGlobalFlag(cmd, "wrtoken", func() {
-		cmd.Flags().StringVar(&flags.WRefreshToken, "wrtoken", "", "Wolt refresh token for automatic access token rotation (or payload with refreshToken).")
-	})
-	addSharedGlobalFlag(cmd, "cookie", func() {
+	if addSharedGlobalFlag(cmd, "wtoken", func() {
+		cmd.Flags().StringVar(&flags.WToken, "wtoken", "", "Wolt token for authenticated endpoints.")
+	}) {
+		markHidden(cmd, "wtoken")
+	}
+	if addSharedGlobalFlag(cmd, "wrtoken", func() {
+		cmd.Flags().StringVar(&flags.WRefreshToken, "wrtoken", "", "Wolt refresh token for automatic access token rotation.")
+	}) {
+		markHidden(cmd, "wrtoken")
+	}
+	if addSharedGlobalFlag(cmd, "cookie", func() {
 		cmd.Flags().StringArrayVar(&flags.Cookies, "cookie", nil, "HTTP cookie header value to forward (repeatable).")
-	})
-	addSharedGlobalFlag(cmd, "verbose", func() {
+	}) {
+		markHidden(cmd, "cookie")
+	}
+	_ = addSharedGlobalFlag(cmd, "verbose", func() {
 		cmd.Flags().BoolVar(&flags.Verbose, "verbose", false, "Enable verbose output (prints upstream request trace and detailed error diagnostics).")
 	})
 }
 
-func addSharedGlobalFlag(cmd *cobra.Command, name string, register func()) {
+func addSharedGlobalFlag(cmd *cobra.Command, name string, register func()) bool {
 	if cmd.Flags().Lookup(name) != nil {
-		return
+		return false
 	}
 	register()
 	flag := cmd.Flags().Lookup(name)
 	if flag == nil {
-		return
+		return false
 	}
 	if flag.Annotations == nil {
 		flag.Annotations = map[string][]string{}
 	}
 	flag.Annotations[sharedGlobalFlagAnnotation] = []string{"true"}
+	return true
+}
+
+func markHidden(cmd *cobra.Command, name string) {
+	if flag := cmd.Flags().Lookup(name); flag != nil {
+		flag.Hidden = true
+	}
 }
 
 func resolveProfileLabel(profileName string) string {
@@ -210,6 +225,9 @@ func resolveLocation(
 		location, locationErr := resolveAccountLocation(ctx, deps, profile, auth)
 		if locationErr == nil {
 			return location, profile.Name, nil
+		}
+		if profile.Location.Lat != 0 || profile.Location.Lon != 0 || profile.IsDefault {
+			return profile.Location, profile.Name, nil
 		}
 		return domain.Location{}, "", emitError(
 			cmd,
@@ -369,7 +387,7 @@ func requireAuth(
 		locale,
 		outputPath,
 		"WOLT_AUTH_REQUIRED",
-		"Authentication is required. Provide --wtoken or at least one --cookie.",
+		"Authentication is required. Run \"wolt login\" first.",
 	)
 }
 
@@ -401,37 +419,21 @@ func upsertProfileTokens(
 	}
 	cfg, err := deps.Config.Load(ctx)
 	if err != nil {
-		return err
-	}
-	index := -1
-	profileName := strings.TrimSpace(selectedProfile)
-	if profileName == "" {
-		for i, profile := range cfg.Profiles {
-			if profile.IsDefault {
-				index = i
-				break
-			}
-		}
-	} else {
-		for i, profile := range cfg.Profiles {
-			if strings.EqualFold(strings.TrimSpace(profile.Name), profileName) {
-				index = i
-				break
-			}
+		cfg = domain.Config{
+			Profiles: []domain.Profile{{Name: "default", IsDefault: true}},
 		}
 	}
-	if index < 0 {
-		if profileName == "" {
-			return fmt.Errorf("default profile not found in config")
-		}
-		return fmt.Errorf("profile %q not found in config", profileName)
+	if len(cfg.Profiles) == 0 {
+		cfg.Profiles = []domain.Profile{{Name: "default", IsDefault: true}}
 	}
 	if strings.TrimSpace(accessToken) != "" {
-		cfg.Profiles[index].WToken = normalizeWToken(accessToken)
+		cfg.Profiles[0].WToken = normalizeWToken(accessToken)
 	}
 	if strings.TrimSpace(refreshToken) != "" {
-		cfg.Profiles[index].WRefreshToken = normalizeRefreshToken(refreshToken)
+		cfg.Profiles[0].WRefreshToken = normalizeRefreshToken(refreshToken)
 	}
+	cfg.Profiles[0].Name = "default"
+	cfg.Profiles[0].IsDefault = true
 	return deps.Config.Save(ctx, cfg)
 }
 

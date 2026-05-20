@@ -14,29 +14,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newVenueCommand(deps Dependencies) *cobra.Command {
-	venue := &cobra.Command{
-		Use:   "venue",
-		Short: "Inspect venue details, menus, and opening hours.",
-	}
-	venue.AddCommand(newVenueShowCommand(deps))
-	venue.AddCommand(newVenueCategoriesCommand(deps))
-	venue.AddCommand(newVenueSearchCommand(deps))
-	venue.AddCommand(newVenueMenuCommand(deps))
-	venue.AddCommand(newVenueHoursCommand(deps))
-	return venue
-}
-
-func newItemCommand(deps Dependencies) *cobra.Command {
-	item := &cobra.Command{
-		Use:   "item",
-		Short: "Inspect a single menu item for a venue.",
-	}
-	item.AddCommand(newItemShowCommand(deps))
-	item.AddCommand(newItemOptionsCommand(deps))
-	return item
-}
-
 func newVenueShowCommand(deps Dependencies) *cobra.Command {
 	var flags globalFlags
 	var include string
@@ -46,7 +23,11 @@ func newVenueShowCommand(deps Dependencies) *cobra.Command {
 		Short: "Show venue details by slug.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			slug := args[0]
+			venueRef, err := resolveVenueReference(cmd.Context(), deps, args[0])
+			if err != nil {
+				return err
+			}
+			slug := fallbackString(venueRef.VenueSlug, normalizeVenueInput(args[0]))
 			format, err := parseOutputFormat(flags.Format)
 			if err != nil {
 				return err
@@ -114,7 +95,11 @@ func newVenueCategoriesCommand(deps Dependencies) *cobra.Command {
 		Short: "List available venue menu categories by slug.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			slug := args[0]
+			venueRef, err := resolveVenueReference(cmd.Context(), deps, args[0])
+			if err != nil {
+				return err
+			}
+			slug := fallbackString(venueRef.VenueSlug, normalizeVenueInput(args[0]))
 			format, err := parseOutputFormat(flags.Format)
 			if err != nil {
 				return err
@@ -124,7 +109,7 @@ func newVenueCategoriesCommand(deps Dependencies) *cobra.Command {
 				return profileError(err, format, flags.Profile, flags.Locale, flags.Output, cmd)
 			}
 
-			venueID := strings.TrimSpace(slug)
+			venueID := fallbackString(venueRef.VenueID, strings.TrimSpace(slug))
 			staticWarnings := []string{}
 			if payload, err := deps.Wolt.VenuePageStatic(cmd.Context(), slug); err == nil {
 				if resolvedID := venueIDFromPayload(payload); strings.TrimSpace(resolvedID) != "" {
@@ -212,6 +197,7 @@ func collectVenueCategoryRows(assortmentPayload map[string]any) []map[string]any
 func newVenueMenuCommand(deps Dependencies) *cobra.Command {
 	var flags globalFlags
 	var category string
+	var query string
 	var fullCatalog bool
 	var includeOptions bool
 	var sortValue string
@@ -232,11 +218,15 @@ func newVenueMenuCommand(deps Dependencies) *cobra.Command {
 		Use:   "menu <slug>",
 		Short: "Show venue menu by slug.",
 		Long: "Show venue menu by slug.\n\n" +
-			"For large marketplace assortments, prefer `wolt venue search <slug> --query <text>` " +
-			"or use category-first mode (`wolt venue menu <slug> --category <slug>`).",
+			"For large marketplace assortments, narrow the menu with `--query <text>` " +
+			"or use category-first mode (`--category <slug>`).",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			slug := args[0]
+			venueRef, err := resolveVenueReference(cmd.Context(), deps, args[0])
+			if err != nil {
+				return err
+			}
+			slug := fallbackString(venueRef.VenueSlug, normalizeVenueInput(args[0]))
 			format, err := parseOutputFormat(flags.Format)
 			if err != nil {
 				return err
@@ -267,7 +257,7 @@ func newVenueMenuCommand(deps Dependencies) *cobra.Command {
 			if minPriceSet && maxPriceSet && minPrice > maxPrice {
 				return fmt.Errorf("--min-price cannot be greater than --max-price")
 			}
-			venueID := strings.TrimSpace(slug)
+			venueID := fallbackString(venueRef.VenueID, strings.TrimSpace(slug))
 			payloads := []map[string]any{}
 			warnings := []string{}
 			assortmentPayload := map[string]any{}
@@ -278,6 +268,53 @@ func newVenueMenuCommand(deps Dependencies) *cobra.Command {
 				}
 			} else {
 				warnings = append(warnings, "venue static page endpoint unavailable")
+			}
+			if strings.TrimSpace(query) != "" {
+				searchPayload, err := requestAssortmentItemsSearchPayload(
+					cmd.Context(),
+					deps,
+					slug,
+					strings.TrimSpace(query),
+					resolveAssortmentLanguage(flags.Locale),
+					auth,
+				)
+				if err != nil {
+					return emitUpstreamError(cmd, format, profile.Name, flags.Locale, flags.Output, flags.Verbose, err)
+				}
+				fallbackCurrency := resolveVenueSearchFallbackCurrency(firstPayload(payloads), searchPayload)
+				data, searchWarnings := buildVenueItemSearchData(
+					venueID,
+					slug,
+					query,
+					category,
+					searchPayload,
+					fallbackCurrency,
+					includeOptions,
+					nil,
+				)
+				data["items"] = applyItemRowFilters(
+					asSlice(data["items"]),
+					itemRowFilters{
+						MinPriceSet:   minPriceSet,
+						MinPrice:      minPrice,
+						MaxPriceSet:   maxPriceSet,
+						MaxPrice:      maxPrice,
+						HideSoldOut:   hideSoldOut,
+						DiscountsOnly: discountsOnly,
+					},
+				)
+				sortItemRows(asSlice(data["items"]), sortMode)
+				data["sort"] = string(sortMode)
+				paginateFlatRows(data, "items", limitPtr, resolvedOffset)
+				if pageSet {
+					data["page"] = page
+				}
+				warnings = append(warnings, searchWarnings...)
+				if format == output.FormatTable {
+					return writeTable(cmd, buildVenueItemSearchTable(data), flags.Output)
+				}
+				env := output.BuildEnvelope(profile.Name, flags.Locale, data, warnings, nil)
+				return writeMachinePayload(cmd, env, format, flags.Output)
 			}
 			var dynamicLocation *domain.Location
 			if trimmed := strings.TrimSpace(flags.Address); trimmed != "" {
@@ -361,7 +398,7 @@ func newVenueMenuCommand(deps Dependencies) *cobra.Command {
 					flags.Output,
 					"WOLT_INVALID_ARGUMENT",
 					fmt.Sprintf(
-						"venue assortment is partial for %q; pass --category <slug> (list with \"wolt venue categories %s\"), or use \"wolt venue search %s --query <text>\"",
+						"venue assortment is partial for %q; pass --category <slug> (list with \"wolt venue categories %s\"), or use \"wolt venue menu %s --query <text>\"",
 						slug,
 						slug,
 						slug,
@@ -388,6 +425,11 @@ func newVenueMenuCommand(deps Dependencies) *cobra.Command {
 			}
 
 			data, menuWarnings := observability.BuildVenueMenu(venueID, payloads, categoryFilter, includeOptions, nil)
+			if strings.TrimSpace(query) != "" {
+				filterItemsByQuery(data, query)
+				data["query"] = strings.TrimSpace(query)
+			}
+			data["venue_slug"] = slug
 			data["items"] = applyItemRowFilters(
 				asSlice(data["items"]),
 				itemRowFilters{
@@ -415,6 +457,7 @@ func newVenueMenuCommand(deps Dependencies) *cobra.Command {
 		},
 	}
 
+	cmd.Flags().StringVar(&query, "query", "", "Search menu items by name")
 	cmd.Flags().StringVar(&category, "category", "", "Category slug")
 	cmd.Flags().BoolVar(&fullCatalog, "full-catalog", false, "Force full cross-category crawl for partial assortments (can be slow).")
 	cmd.Flags().BoolVar(&includeOptions, "include-options", false, "Include option group IDs")
@@ -428,154 +471,6 @@ func newVenueMenuCommand(deps Dependencies) *cobra.Command {
 	cmd.Flags().IntVar(&page, "page", 0, "1-based page number (requires --limit; cannot be combined with --offset)")
 	addGlobalFlags(cmd, &flags)
 	cmd.PreRun = func(cmd *cobra.Command, args []string) {
-		limitSet = cmd.Flags().Changed("limit")
-		offsetSet = cmd.Flags().Changed("offset")
-		pageSet = cmd.Flags().Changed("page")
-		minPriceSet = cmd.Flags().Changed("min-price")
-		maxPriceSet = cmd.Flags().Changed("max-price")
-	}
-	return cmd
-}
-
-func newVenueSearchCommand(deps Dependencies) *cobra.Command {
-	var flags globalFlags
-	var query string
-	var category string
-	var includeOptions bool
-	var sortValue string
-	var limit int
-	var limitSet bool
-	var offset int
-	var offsetSet bool
-	var page int
-	var pageSet bool
-	var minPrice int
-	var minPriceSet bool
-	var maxPrice int
-	var maxPriceSet bool
-	var hideSoldOut bool
-	var discountsOnly bool
-
-	cmd := &cobra.Command{
-		Use:   "search <slug>",
-		Short: "Search items inside a single venue (recommended for large marketplaces).",
-		Long: "Search items inside one venue by query.\n\n" +
-			"Recommended for large marketplace venues where full menu traversal is heavy.",
-		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if strings.TrimSpace(query) == "" {
-				return fmt.Errorf("%s", requiredArg("--query"))
-			}
-			slug := args[0]
-			format, err := parseOutputFormat(flags.Format)
-			if err != nil {
-				return err
-			}
-			profile, err := deps.Profiles.Find(cmd.Context(), flags.Profile)
-			if err != nil {
-				return profileError(err, format, flags.Profile, flags.Locale, flags.Output, cmd)
-			}
-			auth := buildAuthContextWithProfile(cmd.Context(), deps, flags)
-			var limitPtr *int
-			if limitSet {
-				limitPtr = &limit
-			}
-			sortMode, err := parseItemRowSort(sortValue)
-			if err != nil {
-				return err
-			}
-			resolvedOffset, err := resolvePageOffset(limit, limitSet, offset, offsetSet, page, pageSet)
-			if err != nil {
-				return err
-			}
-			if minPriceSet && minPrice < 0 {
-				return fmt.Errorf("--min-price must be >= 0")
-			}
-			if maxPriceSet && maxPrice < 0 {
-				return fmt.Errorf("--max-price must be >= 0")
-			}
-			if minPriceSet && maxPriceSet && minPrice > maxPrice {
-				return fmt.Errorf("--min-price cannot be greater than --max-price")
-			}
-
-			venueID := strings.TrimSpace(slug)
-			warnings := []string{}
-			staticPayload := map[string]any{}
-			if payload, err := deps.Wolt.VenuePageStatic(cmd.Context(), slug); err == nil {
-				staticPayload = payload
-				if resolvedID := venueIDFromPayload(payload); strings.TrimSpace(resolvedID) != "" {
-					venueID = strings.TrimSpace(resolvedID)
-				}
-			} else {
-				warnings = append(warnings, "venue static page endpoint unavailable")
-			}
-
-			searchPayload, err := requestAssortmentItemsSearchPayload(
-				cmd.Context(),
-				deps,
-				slug,
-				strings.TrimSpace(query),
-				resolveAssortmentLanguage(flags.Locale),
-				auth,
-			)
-			if err != nil {
-				return emitUpstreamError(cmd, format, profile.Name, flags.Locale, flags.Output, flags.Verbose, err)
-			}
-
-			fallbackCurrency := resolveVenueSearchFallbackCurrency(staticPayload, searchPayload)
-			data, searchWarnings := buildVenueItemSearchData(
-				venueID,
-				slug,
-				query,
-				category,
-				searchPayload,
-				fallbackCurrency,
-				includeOptions,
-				nil,
-			)
-			data["items"] = applyItemRowFilters(
-				asSlice(data["items"]),
-				itemRowFilters{
-					MinPriceSet:   minPriceSet,
-					MinPrice:      minPrice,
-					MaxPriceSet:   maxPriceSet,
-					MaxPrice:      maxPrice,
-					HideSoldOut:   hideSoldOut,
-					DiscountsOnly: discountsOnly,
-				},
-			)
-			sortItemRows(asSlice(data["items"]), sortMode)
-			data["sort"] = string(sortMode)
-			paginateFlatRows(data, "items", limitPtr, resolvedOffset)
-			if pageSet {
-				data["page"] = page
-			}
-			warnings = append(warnings, searchWarnings...)
-
-			if format == output.FormatTable {
-				return writeTable(cmd, buildVenueItemSearchTable(data), flags.Output)
-			}
-			env := output.BuildEnvelope(profile.Name, flags.Locale, data, warnings, nil)
-			return writeMachinePayload(cmd, env, format, flags.Output)
-		},
-	}
-
-	cmd.Flags().StringVar(&query, "query", "", "Search query")
-	cmd.Flags().StringVar(&category, "category", "", "Category slug filter")
-	cmd.Flags().BoolVar(&includeOptions, "include-options", false, "Include option-group IDs")
-	cmd.Flags().StringVar(&sortValue, "sort", string(itemRowSortRecommended), "Sort strategy: recommended, price, name")
-	cmd.Flags().IntVar(&minPrice, "min-price", 0, "Minimum item base price in minor units")
-	cmd.Flags().IntVar(&maxPrice, "max-price", 0, "Maximum item base price in minor units")
-	cmd.Flags().BoolVar(&hideSoldOut, "hide-sold-out", false, "Exclude sold-out items")
-	cmd.Flags().BoolVar(&discountsOnly, "discounts-only", false, "Only include items with discounts")
-	cmd.Flags().IntVar(&limit, "limit", 0, "Limit returned rows")
-	cmd.Flags().IntVar(&offset, "offset", 0, "Offset returned rows")
-	cmd.Flags().IntVar(&page, "page", 0, "1-based page number (requires --limit; cannot be combined with --offset)")
-	if err := cmd.MarkFlagRequired("query"); err != nil {
-		panic(err)
-	}
-	addGlobalFlags(cmd, &flags)
-	cmd.PreRun = func(cmd *cobra.Command, _ []string) {
 		limitSet = cmd.Flags().Changed("limit")
 		offsetSet = cmd.Flags().Changed("offset")
 		pageSet = cmd.Flags().Changed("page")
@@ -954,7 +849,11 @@ func newItemShowCommand(deps Dependencies) *cobra.Command {
 		Short: "Show item details by venue slug and item ID.",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			venueSlug := args[0]
+			venueRef, err := resolveVenueReference(cmd.Context(), deps, args[0])
+			if err != nil {
+				return err
+			}
+			venueSlug := fallbackString(venueRef.VenueSlug, normalizeVenueInput(args[0]))
 			itemID := args[1]
 			format, err := parseOutputFormat(flags.Format)
 			if err != nil {
@@ -988,52 +887,6 @@ func newItemShowCommand(deps Dependencies) *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&includeUpsell, "include-upsell", false, "Include upsell items")
-	addGlobalFlags(cmd, &flags)
-	return cmd
-}
-
-func newItemOptionsCommand(deps Dependencies) *cobra.Command {
-	var flags globalFlags
-
-	cmd := &cobra.Command{
-		Use:   "options <venue-slug> <item-id>",
-		Short: "Show full option groups/values for an item.",
-		Args:  cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			venueSlug := args[0]
-			itemID := args[1]
-			format, err := parseOutputFormat(flags.Format)
-			if err != nil {
-				return err
-			}
-
-			profile, err := deps.Profiles.Find(cmd.Context(), flags.Profile)
-			if err != nil {
-				return profileError(err, format, flags.Profile, flags.Locale, flags.Output, cmd)
-			}
-			auth := buildAuthContextWithProfile(cmd.Context(), deps, flags)
-
-			venueID, payload, warnings := resolveVenueItemPayloadBySlug(cmd.Context(), deps, venueSlug, itemID, auth)
-			if !payloadContainsItem(payload, venueID, itemID) {
-				return fmt.Errorf(
-					"item %q was not found for venue slug %q; run \"wolt venue menu %s --include-options\" to list valid item IDs",
-					itemID,
-					venueSlug,
-					venueSlug,
-				)
-			}
-			itemGroupIDs := itemOptionGroupIDsFromPayload(payload, venueID, itemID)
-			data, optionWarnings := buildItemOptionsData(venueID, itemID, payload, itemGroupIDs)
-			warnings = append(warnings, optionWarnings...)
-
-			if format == output.FormatTable {
-				return writeTable(cmd, buildItemOptionsTable(data), flags.Output)
-			}
-			env := output.BuildEnvelope(profile.Name, flags.Locale, data, warnings, nil)
-			return writeMachinePayload(cmd, env, format, flags.Output)
-		},
-	}
-
 	addGlobalFlags(cmd, &flags)
 	return cmd
 }
@@ -1135,28 +988,6 @@ func resolveVenueItemPayloadBySlug(
 		warnings = append(warnings, "item payload fallback unavailable")
 	}
 	return venueID, payload, dedupeStrings(warnings)
-}
-
-func itemOptionGroupIDsFromPayload(payload map[string]any, venueID string, itemID string) []string {
-	targetItemID := strings.TrimSpace(itemID)
-	if targetItemID == "" || payload == nil {
-		return nil
-	}
-	for _, row := range observability.ExtractMenuItems(payload, venueID, "") {
-		if strings.TrimSpace(asString(row["item_id"])) != targetItemID {
-			continue
-		}
-		out := make([]string, 0, len(asSlice(row["option_group_ids"])))
-		for _, value := range asSlice(row["option_group_ids"]) {
-			id := strings.TrimSpace(asString(value))
-			if id == "" {
-				continue
-			}
-			out = append(out, id)
-		}
-		return dedupeStrings(out)
-	}
-	return nil
 }
 
 func payloadContainsItem(payload map[string]any, venueID string, itemID string) bool {
@@ -1266,17 +1097,10 @@ func buildVenueItemSearchData(
 }
 
 func buildVenueMenuTable(data map[string]any) string {
-	headers := []string{"Item ID", "Name", "Price", "Discounts", "Option groups"}
+	headers := []string{"Item ID", "Name", "Price", "Discounts"}
 	rows := [][]string{}
 	for _, value := range asSlice(data["items"]) {
 		item := asMap(value)
-		optionGroups := "-"
-		if _, ok := item["option_group_ids"]; ok {
-			optionGroups = stringsJoin(asSlice(item["option_group_ids"]), ", ")
-			if optionGroups == "" {
-				optionGroups = "-"
-			}
-		}
 		discounts := stringsJoin(asSlice(item["discounts"]), ", ")
 		if discounts == "" {
 			discounts = "-"
@@ -1286,30 +1110,57 @@ func buildVenueMenuTable(data map[string]any) string {
 			asString(item["name"]),
 			formatBasePriceForTable(asMap(item["base_price"])),
 			discounts,
-			optionGroups,
 		})
 	}
-	title := "Venue menu: " + asString(data["venue_id"])
+	title := "Venue menu: " + fallbackString(asString(data["venue_slug"]), asString(data["venue_id"]))
+	if query := strings.TrimSpace(asString(data["query"])); query != "" {
+		title += " (" + query + ")"
+	}
 	if asBool(data["wolt_plus"]) {
 		title += " (Wolt+)"
 	}
 	return output.RenderTable(title, headers, rows)
 }
 
+func filterItemsByQuery(data map[string]any, query string) {
+	if data == nil {
+		return
+	}
+	needle := strings.ToLower(strings.TrimSpace(query))
+	if needle == "" {
+		return
+	}
+	items := asSlice(data["items"])
+	filtered := make([]any, 0, len(items))
+	for _, value := range items {
+		item := asMap(value)
+		if item == nil {
+			continue
+		}
+		if strings.Contains(strings.ToLower(asString(item["name"])), needle) ||
+			strings.Contains(strings.ToLower(asString(item["item_id"])), needle) ||
+			strings.Contains(strings.ToLower(asString(item["category"])), needle) {
+			filtered = append(filtered, item)
+		}
+	}
+	data["total"] = len(filtered)
+	data["items"] = filtered
+}
+
+func firstPayload(payloads []map[string]any) map[string]any {
+	if len(payloads) == 0 {
+		return nil
+	}
+	return payloads[0]
+}
+
 func buildVenueItemSearchTable(data map[string]any) string {
-	headers := []string{"Item ID", "Name", "Category", "Price", "Sold out", "Discounts", "Option groups"}
+	headers := []string{"Item ID", "Name", "Category", "Price", "Sold out", "Discounts"}
 	rows := make([][]string, 0, len(asSlice(data["items"])))
 	for _, value := range asSlice(data["items"]) {
 		item := asMap(value)
 		if item == nil {
 			continue
-		}
-		optionGroups := "-"
-		if _, ok := item["option_group_ids"]; ok {
-			optionGroups = stringsJoin(asSlice(item["option_group_ids"]), ", ")
-			if optionGroups == "" {
-				optionGroups = "-"
-			}
 		}
 		discounts := stringsJoin(asSlice(item["discounts"]), ", ")
 		if discounts == "" {
@@ -1322,11 +1173,10 @@ func buildVenueItemSearchTable(data map[string]any) string {
 			formatVenueSearchPriceForTable(asMap(item["base_price"]), asMap(item["original_price"])),
 			boolToYesNo(asBool(item["is_sold_out"])),
 			discounts,
-			optionGroups,
 		})
 	}
 	if len(rows) == 0 {
-		rows = append(rows, []string{"-", "-", "-", "-", "-", "-", "-"})
+		rows = append(rows, []string{"-", "-", "-", "-", "-", "-"})
 	}
 	return output.RenderTable(
 		fmt.Sprintf("Venue item search: %s (%s)", asString(data["venue_slug"]), asString(data["query"])),
@@ -1554,117 +1404,6 @@ func buildUpsellRows(upsellItems []any) [][]string {
 		rows = append(rows, []string{"-", "-", "-"})
 	}
 	return rows
-}
-
-func buildItemOptionsData(venueID string, itemID string, payload map[string]any, preferredGroupIDs []string) (map[string]any, []string) {
-	warnings := []string{}
-	optionSpecs := extractOptionSpecs(payload)
-	currency := strings.TrimSpace(asString(asMap(payload["price"])["currency"]))
-	if currency == "" {
-		currency = "EUR"
-	}
-	groupIDs := make([]string, 0, len(optionSpecs))
-	for _, preferred := range dedupeStrings(preferredGroupIDs) {
-		preferred = strings.TrimSpace(preferred)
-		if preferred == "" {
-			continue
-		}
-		if _, ok := optionSpecs[preferred]; ok {
-			groupIDs = append(groupIDs, preferred)
-		}
-	}
-	if len(groupIDs) == 0 {
-		for groupID := range optionSpecs {
-			groupIDs = append(groupIDs, groupID)
-		}
-	} else if len(preferredGroupIDs) > 0 && len(groupIDs) < len(dedupeStrings(preferredGroupIDs)) {
-		warnings = append(warnings, "some item option groups were missing in payload; showing resolved subset")
-	}
-	sort.Strings(groupIDs)
-
-	optionGroups := make([]any, 0, len(groupIDs))
-	for _, groupID := range groupIDs {
-		spec := optionSpecs[groupID]
-		valueIDs := make([]string, 0, len(spec.Values))
-		for valueID := range spec.Values {
-			valueIDs = append(valueIDs, valueID)
-		}
-		sort.Strings(valueIDs)
-
-		values := make([]any, 0, len(valueIDs))
-		for _, valueID := range valueIDs {
-			value := spec.Values[valueID]
-			values = append(values, map[string]any{
-				"value_id": valueID,
-				"name":     emptyToNil(value.Name),
-				"price": map[string]any{
-					"amount":   value.Price,
-					"currency": currency,
-				},
-				"example_option": fmt.Sprintf("%s=%s", groupID, valueID),
-			})
-		}
-
-		optionGroups = append(optionGroups, map[string]any{
-			"group_id": groupID,
-			"name":     emptyToNil(spec.Name),
-			"required": spec.Required || spec.MinSelect > 0,
-			"min":      spec.MinSelect,
-			"max":      spec.MaxSelect,
-			"values":   values,
-		})
-	}
-	if len(optionGroups) == 0 {
-		warnings = append(warnings, "no option groups were discovered in the item payload")
-	}
-
-	return map[string]any{
-		"venue_id":      venueID,
-		"item_id":       itemID,
-		"option_groups": optionGroups,
-		"group_count":   len(optionGroups),
-		"currency":      currency,
-	}, warnings
-}
-
-func buildItemOptionsTable(data map[string]any) string {
-	summary := output.RenderTable("Item option groups", []string{"Field", "Value"}, [][]string{
-		{"Venue ID", fallbackString(asString(data["venue_id"]), "-")},
-		{"Item ID", fallbackString(asString(data["item_id"]), "-")},
-		{"Groups", asString(data["group_count"])},
-		{"Currency", fallbackString(asString(data["currency"]), "-")},
-	})
-
-	headers := []string{"Group", "Value ID", "Value name", "Price", "Example --option"}
-	rows := [][]string{}
-	for _, groupValue := range asSlice(data["option_groups"]) {
-		group := asMap(groupValue)
-		if group == nil {
-			continue
-		}
-		groupLabel := fallbackString(asString(group["group_id"]), "-")
-		if groupName := asString(group["name"]); groupName != "" {
-			groupLabel = fmt.Sprintf("%s (%s)", groupLabel, groupName)
-		}
-		for _, valueNode := range asSlice(group["values"]) {
-			valueMap := asMap(valueNode)
-			if valueMap == nil {
-				continue
-			}
-			currency := asString(asMap(valueMap["price"])["currency"])
-			rows = append(rows, []string{
-				groupLabel,
-				fallbackString(asString(valueMap["value_id"]), "-"),
-				fallbackString(asString(valueMap["name"]), "-"),
-				fallbackString(formatMinorAmount(asInt(asMap(valueMap["price"])["amount"]), currency), "-"),
-				"--option " + asString(valueMap["example_option"]),
-			})
-		}
-	}
-	if len(rows) == 0 {
-		rows = append(rows, []string{"-", "-", "-", "-", "-"})
-	}
-	return summary + "\n\n" + output.RenderTable("Selectable values", headers, rows)
 }
 
 func fallbackString(value string, fallback string) string {

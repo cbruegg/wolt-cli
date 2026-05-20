@@ -32,38 +32,6 @@ func enrichVenueSearchRowsWithDynamicPromotions(
 	enrichVenueRowsWithDynamicPromotions(ctx, deps, rows, location, auth)
 }
 
-func enrichDiscoverFeedRowsWithDynamicPromotions(
-	ctx context.Context,
-	deps Dependencies,
-	data map[string]any,
-	location *domain.Location,
-	auth woltgateway.AuthContext,
-) {
-	sectionsItems := make([][]any, 0, len(asSlice(data["sections"])))
-	for _, sectionValue := range asSlice(data["sections"]) {
-		section := asMap(sectionValue)
-		if section == nil {
-			continue
-		}
-		sectionsItems = append(sectionsItems, asSlice(section["items"]))
-	}
-	// Round-robin rows across sections so enrichment budget covers more sections.
-	rows := []any{}
-	for depth := 0; ; depth++ {
-		added := false
-		for _, items := range sectionsItems {
-			if depth < len(items) {
-				rows = append(rows, items[depth])
-				added = true
-			}
-		}
-		if !added {
-			break
-		}
-	}
-	enrichVenueRowsWithDynamicPromotions(ctx, deps, rows, location, auth)
-}
-
 func enrichVenueRowsWithDynamicPromotions(
 	ctx context.Context,
 	deps Dependencies,

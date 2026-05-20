@@ -10,15 +10,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newAuthCommand(deps Dependencies) *cobra.Command {
-	auth := &cobra.Command{
-		Use:   "auth",
-		Short: "Inspect authentication state for authenticated commands.",
-	}
-	auth.AddCommand(newAuthStatusCommand(deps))
-	return auth
-}
-
 func newAuthStatusCommand(deps Dependencies) *cobra.Command {
 	var flags globalFlags
 

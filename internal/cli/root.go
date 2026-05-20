@@ -12,13 +12,9 @@ import (
 
 var sharedGlobalOptionOrder = []string{
 	"format",
-	"profile",
 	"address",
 	"locale",
 	"no-color",
-	"wtoken",
-	"wrtoken",
-	"cookie",
 	"verbose",
 }
 
@@ -36,7 +32,7 @@ func NewRootCommand(deps Dependencies) *cobra.Command {
 
 	root := &cobra.Command{
 		Use:           "wolt",
-		Short:         "Browse Wolt venues, inspect menus, and manage local profiles.",
+		Short:         "Browse Wolt venues, manage one account, and prepare carts.",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		CompletionOptions: cobra.CompletionOptions{
@@ -61,7 +57,6 @@ func NewRootCommand(deps Dependencies) *cobra.Command {
 		},
 	}
 	root.Flags().BoolP("version", "v", false, "Show CLI version and exit.")
-	root.SetHelpCommand(&cobra.Command{Hidden: true})
 	defaultHelpFunc := root.HelpFunc()
 	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		if cmd == root {
@@ -71,15 +66,14 @@ func NewRootCommand(deps Dependencies) *cobra.Command {
 		defaultHelpFunc(cmd, args)
 	})
 
-	root.AddCommand(newDiscoverCommand(deps))
-	root.AddCommand(newSearchCommand(deps))
-	root.AddCommand(newVenueCommand(deps))
-	root.AddCommand(newItemCommand(deps))
-	root.AddCommand(newAuthCommand(deps))
+	root.AddCommand(newLoginCommand(deps))
+	root.AddCommand(newLogoutCommand(deps))
+	root.AddCommand(newStatusCommand(deps))
+	root.AddCommand(newAccountCommand(deps))
+	root.AddCommand(newVenuesCommand(deps))
+	root.AddCommand(newSingleVenueCommand(deps))
 	root.AddCommand(newCartCommand(deps))
 	root.AddCommand(newCheckoutCommand(deps))
-	root.AddCommand(newProfileCommand(deps))
-	root.AddCommand(newConfigureCommand(deps))
 
 	return root
 }
@@ -107,7 +101,7 @@ func attachVerboseHTTPTrace(cmd *cobra.Command, upstream any) {
 func renderRootHelp(out io.Writer, root *cobra.Command) {
 	_, _ = fmt.Fprintf(out, "%s: %s\n\n", root.Name(), root.Short)
 	_, _ = fmt.Fprintf(out, "usage: %s <command> [options]\n", root.Name())
-	_, _ = fmt.Fprintln(out, "global options (all optional unless marked required):")
+	_, _ = fmt.Fprintln(out, "global options:")
 	for _, option := range rootOptions(root) {
 		_, _ = fmt.Fprintf(out, "  %s%s: %s\n", option.token, optionLabels(option), option.usage)
 	}
@@ -115,17 +109,18 @@ func renderRootHelp(out io.Writer, root *cobra.Command) {
 	_, _ = fmt.Fprintln(out)
 	_, _ = fmt.Fprintln(out, "commands:")
 	for _, cmd := range visibleCommands(root) {
-		_, _ = fmt.Fprintf(out, "  %s\n", cmd.Name())
-		_, _ = fmt.Fprintf(out, "    %s\n", cmd.Short)
+		_, _ = fmt.Fprintf(out, "  %-10s %s\n", cmd.Name(), cmd.Short)
 	}
 
 	_, _ = fmt.Fprintln(out)
-	_, _ = fmt.Fprintln(out, "notes:")
-	_, _ = fmt.Fprintln(out, "  - options are optional unless marked [required].")
-	_, _ = fmt.Fprintln(out, "  - checkout is preview-only in this CLI; final order placement happens in Wolt using your account-selected delivery address.")
+	_, _ = fmt.Fprintln(out, "common flows:")
+	_, _ = fmt.Fprintln(out, "  wolt login")
+	_, _ = fmt.Fprintln(out, "  wolt venues --query sushi")
+	_, _ = fmt.Fprintln(out, "  wolt venue menu <venue> --query ramen")
+	_, _ = fmt.Fprintln(out, "  wolt cart add <venue> <item-id>")
+	_, _ = fmt.Fprintln(out, "  wolt checkout")
 	_, _ = fmt.Fprintln(out)
-	_, _ = fmt.Fprintln(out, "full reference:")
-	emitReference(out, root, root.Name())
+	_, _ = fmt.Fprintln(out, "Use \"wolt help <command>\" for detailed command help.")
 }
 
 func visibleCommands(parent *cobra.Command) []*cobra.Command {
@@ -137,23 +132,6 @@ func visibleCommands(parent *cobra.Command) []*cobra.Command {
 		commands = append(commands, cmd)
 	}
 	return commands
-}
-
-func emitReference(out io.Writer, parent *cobra.Command, path string) {
-	for _, cmd := range visibleCommands(parent) {
-		signature := strings.TrimSpace(path + " " + cmd.Use)
-		_, _ = fmt.Fprintf(out, "- %s\n", signature)
-		_, _ = fmt.Fprintf(out, "  %s\n", cmd.Short)
-		options := commandOptions(cmd)
-		if len(options) > 0 {
-			_, _ = fmt.Fprintln(out, "  options:")
-			for _, option := range options {
-				_, _ = fmt.Fprintf(out, "    %s%s: %s\n", option.token, optionLabels(option), option.usage)
-			}
-		}
-		_, _ = fmt.Fprintln(out)
-		emitReference(out, cmd, strings.TrimSpace(path+" "+cmd.Name()))
-	}
 }
 
 type optionDoc struct {
