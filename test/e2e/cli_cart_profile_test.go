@@ -471,6 +471,190 @@ func TestCartAddJSON(t *testing.T) {
 	}
 }
 
+func TestCartAddAcceptsWoltItemURL(t *testing.T) {
+	var capturedItemID string
+	deps := cli.Dependencies{
+		Wolt: &mockWolt{
+			restaurantByIDFunc: func(_ context.Context, id string) (*domain.Restaurant, error) {
+				return &domain.Restaurant{ID: id, Slug: "bastard-burgers-mikonkatu"}, nil
+			},
+			venuePageStaticFunc: func(_ context.Context, slug string) (map[string]any, error) {
+				return map[string]any{"venue": map[string]any{"id": "6348098a9157ab2b10bdaf65"}}, nil
+			},
+			venueItemPageFunc: func(_ context.Context, _ string, itemID string) (map[string]any, error) {
+				capturedItemID = itemID
+				return map[string]any{
+					"name":  "The Bastard Classic Cheese",
+					"price": map[string]any{"amount": 1450, "currency": "EUR"},
+				}, nil
+			},
+			addToBasketFunc: func(_ context.Context, payload map[string]any, _ woltgateway.AuthContext) (map[string]any, error) {
+				items := asSlicePayload(t, payload["items"])
+				if len(items) == 0 {
+					t.Fatalf("expected at least one item in addToBasket payload")
+				}
+				return map[string]any{"id": "basket-1", "venue_id": "6348098a9157ab2b10bdaf65"}, nil
+			},
+			basketCountFunc: func(context.Context, woltgateway.AuthContext) (map[string]any, error) {
+				return map[string]any{"count": 1}, nil
+			},
+			basketsPageFunc: func(context.Context, domain.Location, woltgateway.AuthContext) (map[string]any, error) {
+				return map[string]any{"baskets": []any{}}, nil
+			},
+		},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 60.1, Lon: 24.9}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+
+	exitCode, out := runCLIWithDeps(
+		t,
+		deps,
+		"cart", "add",
+		"bastard-burgers-mikonkatu",
+		"https://wolt.com/en/fin/helsinki/venue/bastard-burgers-mikonkatu/itemid-67dbda2656a6f0831337ecdb",
+		"--wtoken", "token",
+		"--format", "json",
+	)
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
+	}
+	if capturedItemID != "67dbda2656a6f0831337ecdb" {
+		t.Fatalf("expected item id extracted from URL, upstream saw %q", capturedItemID)
+	}
+}
+
+func TestCartAddByQueryFindsExactItemMatch(t *testing.T) {
+	var addedItemID string
+	deps := cli.Dependencies{
+		Wolt: &mockWolt{
+			venuePageStaticFunc: func(context.Context, string) (map[string]any, error) {
+				return map[string]any{"venue": map[string]any{"id": "6348098a9157ab2b10bdaf65"}}, nil
+			},
+			assortmentItemsSearchFn: func(_ context.Context, _, query, _ string, _ woltgateway.AuthContext) (map[string]any, error) {
+				if query != "The Bastard Classic Cheese" {
+					t.Fatalf("expected query forwarded to upstream unchanged, got %q", query)
+				}
+				return map[string]any{
+					"items": []any{
+						map[string]any{"id": "67dbda2656a6f0831337ecdb", "name": "The Bastard Classic Cheese", "price": map[string]any{"amount": 1450, "currency": "EUR"}, "category_name": "Burgers"},
+						map[string]any{"id": "67dbda2656a6f0831337ecdc", "name": "Bastard Classic Cheese Meal", "price": map[string]any{"amount": 1850, "currency": "EUR"}, "category_name": "Combos"},
+					},
+				}, nil
+			},
+			venueItemPageFunc: func(_ context.Context, _ string, itemID string) (map[string]any, error) {
+				return map[string]any{
+					"name":  "The Bastard Classic Cheese",
+					"price": map[string]any{"amount": 1450, "currency": "EUR"},
+				}, nil
+			},
+			addToBasketFunc: func(_ context.Context, payload map[string]any, _ woltgateway.AuthContext) (map[string]any, error) {
+				items := asSlicePayload(t, payload["items"])
+				addedItemID = asStringPayload(asMapPayload(t, items[len(items)-1])["id"])
+				return map[string]any{"id": "basket-1", "venue_id": "6348098a9157ab2b10bdaf65"}, nil
+			},
+			basketCountFunc: func(context.Context, woltgateway.AuthContext) (map[string]any, error) {
+				return map[string]any{"count": 1}, nil
+			},
+			basketsPageFunc: func(context.Context, domain.Location, woltgateway.AuthContext) (map[string]any, error) {
+				return map[string]any{"baskets": []any{}}, nil
+			},
+		},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 60.1, Lon: 24.9}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+
+	exitCode, out := runCLIWithDeps(
+		t,
+		deps,
+		"cart", "add",
+		"bastard-burgers-mikonkatu",
+		"--query", "The Bastard Classic Cheese",
+		"--wtoken", "token",
+		"--format", "json",
+	)
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
+	}
+	if addedItemID != "67dbda2656a6f0831337ecdb" {
+		t.Fatalf("expected exact-name match to win; upstream saw item id %q", addedItemID)
+	}
+	// Ensure we didn't trip the ambiguity guard on a substring-only hit.
+	if !strings.Contains(out, "The Bastard Classic Cheese") {
+		t.Fatalf("expected resolved item name in output, got:\n%s", out)
+	}
+}
+
+func TestCartAddByQueryRejectsAmbiguousMatch(t *testing.T) {
+	deps := cli.Dependencies{
+		Wolt: &mockWolt{
+			venuePageStaticFunc: func(context.Context, string) (map[string]any, error) {
+				return map[string]any{"venue": map[string]any{"id": "venue-1"}}, nil
+			},
+			assortmentItemsSearchFn: func(context.Context, string, string, string, woltgateway.AuthContext) (map[string]any, error) {
+				return map[string]any{
+					"items": []any{
+						map[string]any{"id": "id-1", "name": "Classic Cheese Burger", "price": map[string]any{"amount": 1000, "currency": "EUR"}},
+						map[string]any{"id": "id-2", "name": "Double Classic Cheese Burger", "price": map[string]any{"amount": 1500, "currency": "EUR"}},
+					},
+				}, nil
+			},
+		},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 60.1, Lon: 24.9}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+
+	exitCode, out := runCLIWithDeps(
+		t,
+		deps,
+		"cart", "add",
+		"bastard-burgers",
+		"--query", "classic cheese",
+		"--wtoken", "token",
+		"--format", "json",
+	)
+	if exitCode == 0 {
+		t.Fatalf("expected non-zero exit for ambiguous match, got 0; output:\n%s", out)
+	}
+	if !strings.Contains(out, "matched 2 items") {
+		t.Fatalf("expected ambiguity error message, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Classic Cheese Burger") || !strings.Contains(out, "Double Classic Cheese Burger") {
+		t.Fatalf("expected candidate list in error message, got:\n%s", out)
+	}
+}
+
+func TestCartAddRejectsBrokenURL(t *testing.T) {
+	deps := cli.Dependencies{
+		Wolt:     &mockWolt{},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 60.1, Lon: 24.9}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+
+	exitCode, out := runCLIWithDeps(
+		t,
+		deps,
+		"cart", "add",
+		"some-venue",
+		"https://example.com/not-a-wolt-item",
+		"--wtoken", "token",
+		"--format", "json",
+	)
+	if exitCode == 0 {
+		t.Fatalf("expected non-zero exit for broken URL, got 0; output:\n%s", out)
+	}
+	if !strings.Contains(out, "could not extract an item id") {
+		t.Fatalf("expected URL extraction error, got:\n%s", out)
+	}
+}
+
 func TestCartAddUsesVenueSlugAssortmentFallback(t *testing.T) {
 	seenAddPayload := map[string]any{}
 	deps := cli.Dependencies{

@@ -114,15 +114,21 @@ func newCartAddCommand(deps Dependencies) *cobra.Command {
 	var priceOverride int
 	var currencyOverride string
 	var venueSlug string
+	var nameQuery string
 	var lat float64
 	var lon float64
 	var latSet bool
 	var lonSet bool
 
 	cmd := &cobra.Command{
-		Use:   "add <venue> <item-id>",
+		Use:   "add <venue> [<item-id>]",
 		Short: "Add an item to basket.",
-		Args:  cobra.ExactArgs(2),
+		Long: "Add an item to basket.\n\n" +
+			"<item-id> accepts a 24-char Mongo ObjectID or a Wolt item URL\n" +
+			"(.../venue/<slug>/itemid-<id>). Omit <item-id> and pass\n" +
+			"--query \"<name>\" to look the item up by name in the venue menu\n" +
+			"(must match exactly one item).",
+		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			format, err := parseOutputFormat(flags.Format)
 			if err != nil {
@@ -144,7 +150,54 @@ func newCartAddCommand(deps Dependencies) *cobra.Command {
 					venueSlug = resolved.VenueSlug
 				}
 			}
-			itemID := strings.TrimSpace(args[1])
+
+			rawItem := ""
+			if len(args) >= 2 {
+				rawItem = args[1]
+			}
+			itemRef := resolveItemReference(rawItem)
+			itemID := itemRef.ItemID
+			trimmedItem := strings.TrimSpace(rawItem)
+			if itemID == "" && trimmedItem != "" {
+				if looksURLShaped(trimmedItem) {
+					return fmt.Errorf("could not extract an item id from %q; expected a Wolt item URL like .../venue/<slug>/itemid-<id>", trimmedItem)
+				}
+				// Bare non-ObjectID strings are forwarded to upstream unchanged so we
+				// stay compatible with internal identifiers and let Wolt reject if
+				// they are genuinely invalid.
+				itemID = trimmedItem
+			}
+			if strings.TrimSpace(venueSlug) == "" && itemRef.VenueSlugHint != "" {
+				venueSlug = itemRef.VenueSlugHint
+			}
+			if itemID == "" {
+				if strings.TrimSpace(nameQuery) == "" {
+					return fmt.Errorf("either <item-id> or --query is required")
+				}
+				slugForLookup := strings.TrimSpace(venueSlug)
+				if slugForLookup == "" {
+					slugForLookup = strings.TrimSpace(args[0])
+				}
+				if slugForLookup == "" {
+					return fmt.Errorf("--query requires a venue slug to search; pass the venue slug (or URL) as the first argument")
+				}
+				match, lookupErr := resolveItemByName(
+					cmd.Context(),
+					deps,
+					slugForLookup,
+					venueID,
+					nameQuery,
+					resolveAssortmentLanguage(flags.Locale),
+					auth,
+				)
+				if lookupErr != nil {
+					return lookupErr
+				}
+				itemID = match.ID
+				if strings.TrimSpace(nameOverride) == "" {
+					nameOverride = match.Name
+				}
+			}
 			if venueID == "" || itemID == "" {
 				return fmt.Errorf("venue and item-id are required")
 			}
@@ -399,6 +452,7 @@ func newCartAddCommand(deps Dependencies) *cobra.Command {
 	cmd.Flags().IntVar(&priceOverride, "price", 0, "Override item price in minor units.")
 	cmd.Flags().StringVar(&currencyOverride, "currency", "", "Override basket currency, for example EUR.")
 	cmd.Flags().StringVar(&venueSlug, "venue-slug", "", "Venue slug used to enrich item metadata/options when needed.")
+	cmd.Flags().StringVar(&nameQuery, "query", "", "Resolve <item-id> by searching the venue menu for an exact-name match. Errors when the query is ambiguous.")
 	cmd.Flags().Float64Var(&lat, "lat", 0, "Latitude override for cart totals refresh. Provide together with --lon.")
 	cmd.Flags().Float64Var(&lon, "lon", 0, "Longitude override for cart totals refresh. Provide together with --lat.")
 	addGlobalFlags(cmd, &flags)
@@ -465,6 +519,7 @@ func newCartRemoveCommand(deps Dependencies) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "remove <item-id>",
 		Short: "Remove item quantity from basket.",
+		Long:  "Remove item quantity from basket.\n\n<item-id> accepts a 24-char Mongo ObjectID or a Wolt item URL (.../venue/<slug>/itemid-<id>).",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			format, err := parseOutputFormat(flags.Format)
@@ -530,7 +585,15 @@ func newCartRemoveCommand(deps Dependencies) *cobra.Command {
 				)
 			}
 
-			itemID := strings.TrimSpace(args[0])
+			itemRef := resolveItemReference(args[0])
+			itemID := itemRef.ItemID
+			if itemID == "" {
+				trimmed := strings.TrimSpace(args[0])
+				if looksURLShaped(trimmed) {
+					return fmt.Errorf("could not extract an item id from %q; expected a Wolt item URL like .../venue/<slug>/itemid-<id>", trimmed)
+				}
+				itemID = trimmed
+			}
 			line, currentCount := findBasketLineByID(selected, itemID)
 			if line == nil {
 				return emitError(

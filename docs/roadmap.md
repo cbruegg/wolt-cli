@@ -5,39 +5,27 @@ single-account, action-oriented direction the CLI took during the
 simplification pass. Listed roughly in usefulness order. None of these
 are scheduled — open an issue or send a PR if you want one prioritized.
 
-## Resolve items the same way we resolve venues
+## ~~Resolve items the same way we resolve venues~~ — shipped
 
-Today `wolt cart add <venue> <item-id>` requires a 24-char Mongo hex ID.
-The venue argument already accepts a slug, an ID, or a full Wolt URL
-(`internal/cli/venue_reference.go`). Items should follow suit:
+`wolt cart add`, `wolt cart remove`, and `wolt venue item` now accept a
+24-char Mongo ObjectID **or** a Wolt item URL of the form
+`.../venue/<slug>/itemid-<id>` (`menuitem-<id>` and `?itemid=<id>` also
+work). When the URL carries the venue slug, the venue argument benefits
+from it for free.
 
-- **Item URLs.** Parse `https://wolt.com/<locale>/<country>/<city>/venue/<slug>/itemid-<id>` and extract `<id>`. Pure string work, no extra API call.
-- **`--query` for cart add.** Skip the menu lookup step:
+`wolt cart add <venue> --query "<name>"` resolves an item by name via
+the venue assortment search (same endpoint `wolt venue menu --query`
+uses) and accepts only a unique match. Ambiguous queries return a
+"matched N items in <venue>" error with the top five candidate
+`Name (item-id)` pairs. Exact-name matches always beat substring hits.
 
-  ```
-  wolt cart add huuva-food-court-niittykumpu --query "double cheese smash"
-  ```
+Still open from this work:
 
-  Resolve the unique item by name from the same menu endpoint
-  `wolt venue menu` already hits. Error with a "did you mean…" list when
-  ambiguous; refuse to guess.
-- **Symmetric input for `cart remove` and `venue item`.** Once item URL/name resolution exists, expose it in every command that currently demands a raw item ID.
-
-Open questions: how to disambiguate name collisions (Wolt sometimes has
-two identical item names under different categories); whether to cache
-the resolved ID locally to avoid repeated menu fetches.
-
-## `cart add --from-url <wolt-item-url>`
-
-A one-shot flow for the most common workflow ("I found something I want
-in the app, give me the CLI command"). Parse the URL, derive both venue
-and item, and add. With explicit per-flag overrides for count and
-options:
-
-```
-wolt cart add --from-url https://wolt.com/.../venue/<slug>/itemid-<id> \
-  --option "Drink=Cola" --count 2
-```
+- **One-shot `cart add <wolt-item-url>`** — let the venue argument be
+  optional when the URL alone carries the slug. The resolver already
+  extracts the slug; needs the cobra arg shape to flex.
+- **Local cache of `slug → id`** so repeated `--query` and URL-driven
+  flows skip the static venue lookup that resolves the venue id.
 
 ## Discovery enrichment beyond tagline + top offer
 

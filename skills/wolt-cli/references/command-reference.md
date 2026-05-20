@@ -68,11 +68,12 @@ By default `venues` skips per-venue promotion/Wolt+ enrichment (single upstream 
 
 - `wolt cart count`
 - `wolt cart [--venue-id <id>] [--details] [--address ... | --lat ... --lon ...]`
-- `wolt cart add <venue> <item-id> [--count <n>] [--option <group=value[:count]> ...] [--allow-substitutions] [--name ...] [--price ...] [--currency ...] [--venue-slug <slug>] [--lat ... --lon ...]`
-- `wolt cart remove <item-id> [--count <n>] [--all] [--venue-id <id>] [--address ... | --lat ... --lon ...]`
+- `wolt cart add <venue> <item-id|url> [--count <n>] [--option <group=value[:count]> ...] [--allow-substitutions] [--name ...] [--price ...] [--currency ...] [--venue-slug <slug>] [--lat ... --lon ...]`
+- `wolt cart add <venue> --query "<item name>"` (resolves a unique item by name via the venue menu search; errors on ambiguous matches)
+- `wolt cart remove <item-id|url> [--count <n>] [--all] [--venue-id <id>] [--address ... | --lat ... --lon ...]`
 - `wolt cart clear [--venue-id <id>] [--all] [--address ... | --lat ... --lon ...]`
 
-`<venue>` on `cart add` accepts slug, hex ID, or Wolt URL (same as `venue`). `--option` accepts both IDs and case-insensitive names (e.g. `--option "Drink=Cola"`). If multiple baskets exist and no `--venue-id` is passed, commands select the first basket.
+`<venue>` accepts slug, hex ID, or Wolt URL (same as `venue`). `<item-id>` on `cart add`/`cart remove` and `venue item` accepts a 24-char Mongo ObjectID or a Wolt item URL (`.../venue/<slug>/itemid-<id>`, `menuitem-<id>`, or `?itemid=<id>`). `--option` accepts both IDs and case-insensitive names (e.g. `--option "Drink=Cola"`). If multiple baskets exist and no `--venue-id` is passed, commands select the first basket.
 
 ## Checkout
 

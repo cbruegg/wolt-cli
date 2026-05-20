@@ -143,7 +143,7 @@ wolt venue menu <venue> [--query <text>] [--category <slug>]
                         [--limit <n>] [--offset <n> | --page <n>]
 wolt venue categories <venue>
 wolt venue hours <venue> [--timezone <iana>]
-wolt venue item <venue> <item-id>
+wolt venue item <venue> <item-id|url>
 ```
 
 `<venue>` accepts a slug, a 24-char Mongo ObjectID, or a Wolt URL
@@ -163,15 +163,29 @@ on `venue menu` exposes option-group IDs you can pass to `cart add --option`.
 ```console
 wolt cart [--venue-id <id>] [--details]
 wolt cart count
-wolt cart add <venue> <item-id> [--count <n>]
-                                [--option <group=value[:count]>...]
-                                [--allow-substitutions]
-                                [--name <text>] [--price <minor>]
-                                [--currency <code>]
-                                [--venue-slug <slug>]
-wolt cart remove <item-id> [--count <n>] [--all] [--venue-id <id>]
+wolt cart add <venue> <item-id|url>
+              [--count <n>]
+              [--option <group=value[:count]>...]
+              [--allow-substitutions]
+              [--name <text>] [--price <minor>]
+              [--currency <code>]
+              [--venue-slug <slug>]
+wolt cart add <venue> --query "<item name>"  # resolves to item id via menu search
+wolt cart remove <item-id|url> [--count <n>] [--all] [--venue-id <id>]
 wolt cart clear [--venue-id <id>] [--all]
 ```
+
+`<item-id>` on `cart add` and `cart remove` accepts either a 24-char
+Mongo ObjectID or a Wolt item URL of the form
+`https://wolt.com/<locale>/<country>/<city>/venue/<slug>/itemid-<id>`
+(`menuitem-<id>` and the same URL with `?itemid=<id>` also work). The
+slug embedded in the URL is reused for venue resolution when you
+haven't passed one explicitly.
+
+`cart add --query "<text>"` is a one-shot path that calls the same
+assortment item search `venue menu --query` uses, requires a single
+match, and errors with a "did you mean…" list when more than one item
+matches. Exact-name matches always beat substring hits.
 
 The basket lives in your Wolt account (same draft you see in the Wolt
 sidebar). Mutations call `POST /order-xp/v1/baskets` and the bulk-delete

@@ -847,6 +847,7 @@ func newItemShowCommand(deps Dependencies) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <venue-slug> <item-id>",
 		Short: "Show item details by venue slug and item ID.",
+		Long:  "Show item details by venue slug and item ID.\n\n<item-id> accepts a 24-char Mongo ObjectID or a Wolt item URL (.../venue/<slug>/itemid-<id>).",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			venueRef, err := resolveVenueReference(cmd.Context(), deps, args[0])
@@ -854,7 +855,18 @@ func newItemShowCommand(deps Dependencies) *cobra.Command {
 				return err
 			}
 			venueSlug := fallbackString(venueRef.VenueSlug, normalizeVenueInput(args[0]))
-			itemID := args[1]
+			itemRef := resolveItemReference(args[1])
+			itemID := itemRef.ItemID
+			if itemID == "" {
+				trimmed := strings.TrimSpace(args[1])
+				if looksURLShaped(trimmed) {
+					return fmt.Errorf("could not extract an item id from %q; expected a Wolt item URL like .../venue/<slug>/itemid-<id>", trimmed)
+				}
+				itemID = trimmed
+			}
+			if strings.TrimSpace(venueSlug) == "" && itemRef.VenueSlugHint != "" {
+				venueSlug = itemRef.VenueSlugHint
+			}
 			format, err := parseOutputFormat(flags.Format)
 			if err != nil {
 				return err

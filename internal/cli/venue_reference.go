@@ -2,14 +2,219 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"strings"
+
+	woltgateway "github.com/mekedron/wolt-cli/internal/gateway/wolt"
+	"github.com/mekedron/wolt-cli/internal/service/observability"
 )
 
 type venueReference struct {
 	Input     string
 	VenueID   string
 	VenueSlug string
+}
+
+// itemReference is the resolved form of any item input accepted by the CLI:
+// a 24-char Mongo ObjectID, a Wolt item URL of the form
+// `https://wolt.com/<locale>/<country>/<city>/venue/<slug>/itemid-<id>`,
+// or the same URL pattern with `/menuitem-<id>` or trailing `?itemid=<id>`.
+//
+// VenueSlugHint is populated when the input was a URL that carries the
+// venue slug, letting callers skip an extra slug lookup.
+type itemReference struct {
+	Input         string
+	ItemID        string
+	VenueSlugHint string
+}
+
+func resolveItemReference(raw string) itemReference {
+	ref := itemReference{Input: raw}
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return ref
+	}
+	if looksLikeObjectID(value) {
+		ref.ItemID = value
+		return ref
+	}
+	parsed, err := url.Parse(value)
+	if err == nil && parsed.Host != "" {
+		ref.VenueSlugHint, ref.ItemID = parseItemURL(parsed)
+		if ref.ItemID != "" {
+			return ref
+		}
+	}
+	// Fall back to the trailing path segment in case the user pasted
+	// something URL-shaped that we couldn't fully match.
+	if err == nil && parsed.Host != "" {
+		if candidate := extractTrailingObjectID(parsed.Path); candidate != "" {
+			ref.ItemID = candidate
+			return ref
+		}
+	}
+	return ref
+}
+
+func parseItemURL(parsed *url.URL) (slugHint, itemID string) {
+	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	for i, segment := range parts {
+		if id, ok := extractIDFromSegment(segment); ok {
+			itemID = id
+			if i > 0 && parts[i-1] != "" {
+				if i-1 >= 1 && (parts[i-1] != "venue" && parts[i-1] != "restaurant") {
+					slugHint = parts[i-1]
+				}
+			}
+		}
+	}
+	if itemID == "" {
+		// Some URLs encode the item id as a query parameter (e.g. `?itemid=...`).
+		for _, key := range []string{"itemid", "item_id", "item"} {
+			if value := strings.TrimSpace(parsed.Query().Get(key)); looksLikeObjectID(value) {
+				itemID = value
+				break
+			}
+		}
+	}
+	if slugHint == "" {
+		// Best-effort: pick the segment that follows /venue/ or /restaurant/.
+		for i, segment := range parts {
+			if (segment == "venue" || segment == "restaurant") && i+1 < len(parts) {
+				next := strings.TrimSpace(parts[i+1])
+				if next != "" && !strings.HasPrefix(next, "itemid-") && !strings.HasPrefix(next, "menuitem-") {
+					slugHint = next
+				}
+				break
+			}
+		}
+	}
+	return slugHint, itemID
+}
+
+func extractIDFromSegment(segment string) (string, bool) {
+	segment = strings.TrimSpace(segment)
+	for _, prefix := range []string{"itemid-", "menuitem-", "item-"} {
+		if strings.HasPrefix(segment, prefix) {
+			candidate := strings.TrimPrefix(segment, prefix)
+			if looksLikeObjectID(candidate) {
+				return candidate, true
+			}
+		}
+	}
+	return "", false
+}
+
+// looksURLShaped reports whether a string is plausibly a URL (i.e. contains a
+// scheme). Used by cart commands to distinguish "user pasted a broken Wolt
+// URL" from "user passed a non-hex item id we should forward to upstream".
+func looksURLShaped(value string) bool {
+	return strings.Contains(value, "://")
+}
+
+func extractTrailingObjectID(path string) string {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	for i := len(parts) - 1; i >= 0; i-- {
+		segment := strings.TrimSpace(parts[i])
+		if looksLikeObjectID(segment) {
+			return segment
+		}
+		if id, ok := extractIDFromSegment(segment); ok {
+			return id
+		}
+	}
+	return ""
+}
+
+// itemNameMatch is one candidate item returned from a venue assortment search.
+type itemNameMatch struct {
+	ID       string
+	Name     string
+	Category string
+}
+
+// resolveItemByName looks up an item inside a single venue's assortment by
+// (case-insensitive) name. The caller passes the venue slug, the user's
+// query, and the resolved request language. Returns:
+//   - the unique match, or
+//   - an explanatory error when nothing matched, or
+//   - an "ambiguous, did you mean…" error listing the top candidates.
+//
+// An exact case-insensitive name match always wins, even when other items
+// contain the same query as a substring.
+func resolveItemByName(
+	ctx context.Context,
+	deps Dependencies,
+	venueSlug string,
+	venueIDForExtract string,
+	query string,
+	language string,
+	auth woltgateway.AuthContext,
+) (itemNameMatch, error) {
+	needle := strings.ToLower(strings.TrimSpace(query))
+	if needle == "" {
+		return itemNameMatch{}, fmt.Errorf("--query cannot be empty")
+	}
+	payload, err := requestAssortmentItemsSearchPayload(ctx, deps, venueSlug, strings.TrimSpace(query), language, auth)
+	if err != nil {
+		return itemNameMatch{}, fmt.Errorf("venue item search failed: %w", err)
+	}
+	items := observability.ExtractMenuItems(payload, venueIDForExtract, venueSlug)
+	matches := make([]itemNameMatch, 0, len(items))
+	exact := make([]itemNameMatch, 0, 2)
+	for _, item := range items {
+		id := strings.TrimSpace(asString(item["item_id"]))
+		name := strings.TrimSpace(asString(item["name"]))
+		if id == "" || name == "" {
+			continue
+		}
+		entry := itemNameMatch{ID: id, Name: name, Category: asString(item["category"])}
+		lowered := strings.ToLower(name)
+		switch {
+		case lowered == needle:
+			exact = append(exact, entry)
+		case strings.Contains(lowered, needle):
+			matches = append(matches, entry)
+		}
+	}
+	if len(exact) == 1 {
+		return exact[0], nil
+	}
+	if len(exact) > 1 {
+		return itemNameMatch{}, ambiguousItemError(query, venueSlug, exact)
+	}
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+	if len(matches) > 1 {
+		return itemNameMatch{}, ambiguousItemError(query, venueSlug, matches)
+	}
+	return itemNameMatch{}, fmt.Errorf("no items in %q matched %q; try a broader query or paste the item id", venueSlug, query)
+}
+
+func ambiguousItemError(query, venueSlug string, candidates []itemNameMatch) error {
+	limit := len(candidates)
+	if limit > 5 {
+		limit = 5
+	}
+	hints := make([]string, 0, limit)
+	for i := 0; i < limit; i++ {
+		c := candidates[i]
+		hints = append(hints, fmt.Sprintf("%s (%s)", c.Name, c.ID))
+	}
+	more := ""
+	if len(candidates) > limit {
+		more = fmt.Sprintf(", and %d more", len(candidates)-limit)
+	}
+	return fmt.Errorf(
+		"%q matched %d items in %q (be more specific or pass the item id): %s%s",
+		query,
+		len(candidates),
+		venueSlug,
+		strings.Join(hints, "; "),
+		more,
+	)
 }
 
 func normalizeVenueInput(raw string) string {

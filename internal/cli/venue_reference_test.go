@@ -124,6 +124,64 @@ func TestResolveVenueReferenceEmptyInput(t *testing.T) {
 	}
 }
 
+func TestResolveItemReference(t *testing.T) {
+	cases := []struct {
+		name     string
+		raw      string
+		wantID   string
+		wantSlug string
+	}{
+		{"empty", "", "", ""},
+		{"whitespace", "   ", "", ""},
+		{"plain object id", "67dbda2656a6f0831337ecdb", "67dbda2656a6f0831337ecdb", ""},
+		{"object id with whitespace", " 67dbda2656a6f0831337ecdb ", "67dbda2656a6f0831337ecdb", ""},
+		{"bare slug is not an item", "the-bastard-classic-cheese", "", ""},
+		{
+			"itemid url",
+			"https://wolt.com/en/fin/helsinki/venue/bastard-burgers-mikonkatu/itemid-67dbda2656a6f0831337ecdb",
+			"67dbda2656a6f0831337ecdb",
+			"bastard-burgers-mikonkatu",
+		},
+		{
+			"menuitem url",
+			"https://wolt.com/en/fin/helsinki/venue/some-place/menuitem-67dbda2656a6f0831337ecdb",
+			"67dbda2656a6f0831337ecdb",
+			"some-place",
+		},
+		{
+			"restaurant url with itemid",
+			"https://wolt.com/en/fin/helsinki/restaurant/burger-king-finnoo/itemid-676939cb70769df4cec6cc6f",
+			"676939cb70769df4cec6cc6f",
+			"burger-king-finnoo",
+		},
+		{
+			"url with itemid query parameter",
+			"https://wolt.com/en/fin/helsinki/venue/foo?itemid=67dbda2656a6f0831337ecdb",
+			"67dbda2656a6f0831337ecdb",
+			"foo",
+		},
+		{
+			"url with trailing object id as last segment",
+			"https://wolt.com/en/fin/helsinki/venue/foo/67dbda2656a6f0831337ecdb",
+			"67dbda2656a6f0831337ecdb",
+			"foo",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got := resolveItemReference(tc.raw)
+			if got.ItemID != tc.wantID {
+				t.Fatalf("ItemID: want %q, got %q", tc.wantID, got.ItemID)
+			}
+			if got.VenueSlugHint != tc.wantSlug {
+				t.Fatalf("VenueSlugHint: want %q, got %q", tc.wantSlug, got.VenueSlugHint)
+			}
+		})
+	}
+}
+
 func TestResolveVenueReferenceFallsBackToInputWhenStaticFails(t *testing.T) {
 	wolt := &testWoltAPI{
 		venuePageStaticFn: func(_ context.Context, _ string) (map[string]any, error) {
