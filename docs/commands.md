@@ -10,7 +10,8 @@ flags listed at the bottom of this page.
 | `wolt logout` | Remove saved credentials. |
 | `wolt status` | Probe whether the saved account is still authenticated. |
 | `wolt account` | Show account profile, orders, addresses, payments, favorites. |
-| `wolt venues` | Browse or search nearby venues. |
+| `wolt feed` | Browse the home-page-style discovery feed grouped by section. |
+| `wolt venues` | Browse or search nearby venues as a flat list. |
 | `wolt venue` | Inspect one venue: details, menu, hours, items, categories. |
 | `wolt cart` | Read or mutate the saved basket draft. |
 | `wolt checkout` | Preview the checkout payload (no order placement). |
@@ -80,6 +81,29 @@ wolt account favorites remove <venue|slug|url>
 All `account *` subcommands require a logged-in session. Address mutation
 endpoints write to `https://restaurant-api.wolt.com/v2/delivery/info`.
 
+## `wolt feed`
+
+```console
+wolt feed [--section-limit <n>] [--per-section <n>]
+          [--query <text>]
+          [--address "<text>" | --lat <f> --lon <f>]
+```
+
+Renders the same section structure you see on wolt.com — "Popular near
+you", "Order again", "Fastest delivery", "Top-rated", etc. — with
+marketing context per row (tagline, top discount offer, rating, ETA).
+One upstream call, no per-venue enrichment, sub-3-second.
+
+Each row in JSON carries `name`, `slug`, `tagline`, `top_offer`,
+`rating`, `delivery_estimate`, `delivery_fee`, `price_range`,
+`promotions`, `wolt_plus`, plus `venue_id` for chaining into `cart add`
+or `venue menu`. The default table shows the action-relevant columns
+truncated to fit (≤32 chars for tagline, ≤26 for top offer).
+
+`--per-section` caps the per-section rows shown in the table (default 6);
+JSON keeps the full upstream slice. `--query` filters venues by name,
+tagline, top-offer, or slug across all sections; empty sections drop out.
+
 ## `wolt venues`
 
 ```console
@@ -95,8 +119,10 @@ wolt venues categories                       # nearby discovery categories
 ```
 
 `--query` filters by venue name or slug. Without `--query`, returns
-nearby venues. Default table is 6 columns (Venue, Slug, Rating,
-Delivery, Fee, Wolt+); JSON keeps the full payload including `address`,
+nearby venues. Default table is 8 columns: Venue, Slug, Tagline,
+Top offer, Rating, Delivery, Fee, Wolt+ — the tagline (Wolt
+`short_description`) and top discount offer come from the same payload,
+no extra HTTP. JSON keeps the full payload including `address`,
 `promotions`, `price_range_scale`.
 
 **Speed**: by default `venues` does not hit per-venue promotion or

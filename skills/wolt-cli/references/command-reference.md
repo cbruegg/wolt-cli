@@ -26,6 +26,7 @@ Leaf commands share global flags unless noted:
 - `logout`
 - `status`
 - `account`
+- `feed`
 - `venues`
 - `venue`
 - `cart`
@@ -37,6 +38,12 @@ Leaf commands share global flags unless noted:
 - `wolt login [--wtoken ...] [--wrtoken ...] [--cookie ...]`
 - `wolt logout`
 - `wolt status`
+
+## Feed
+
+- `wolt feed [--section-limit <n>] [--per-section <n>] [--query <text>] [--address ... | --lat ... --lon ...]`
+
+Mirrors the wolt.com home page: section-grouped venues with tagline + top discount offer per row. One upstream call, sub-3-second. Use for "I'm hungry, give me ideas" rather than `venues` (flat list).
 
 ## Venues
 

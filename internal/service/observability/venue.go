@@ -65,6 +65,8 @@ func BuildDiscoveryFeed(sections []domain.Section, city string, limit *int, wolt
 				"venue_id":          domain.NormalizeID(coalesce(item.Venue.ID, item.Link.Target)),
 				"slug":              item.Venue.Slug,
 				"name":              item.Title,
+				"tagline":           item.Venue.Tagline(),
+				"top_offer":         venueTopOffer(item.Venue),
 				"rating":            ratingValue,
 				"delivery_estimate": item.Venue.FormatEstimateRange(),
 				"delivery_fee":      deliveryFeeMap(item.Venue.DeliveryPriceInt, item.Venue.Currency),
@@ -299,6 +301,8 @@ func BuildVenueSearchResult(
 			"venue_id":          domain.NormalizeID(coalesce(item.Venue.ID, item.Link.Target)),
 			"slug":              item.Venue.Slug,
 			"name":              item.Title,
+			"tagline":           item.Venue.Tagline(),
+			"top_offer":         venueTopOffer(item.Venue),
 			"address":           item.Venue.Address,
 			"rating":            ratingValue,
 			"delivery_estimate": item.Venue.FormatEstimateRange(),
@@ -325,6 +329,64 @@ func priceRangeScale(level int) string {
 		level = 5
 	}
 	return strings.Repeat("$", level)
+}
+
+// venueTopOffer returns the most user-facing promotion text for a venue,
+// preferring "discount"-variant promos over generic ones. Returns "" when
+// the venue has no promo worth highlighting.
+func venueTopOffer(venue *domain.Venue) string {
+	if venue == nil {
+		return ""
+	}
+	candidates := []map[string]any{}
+	for _, raw := range venue.Promotions {
+		if m, ok := raw.(map[string]any); ok {
+			candidates = append(candidates, m)
+		}
+	}
+	for _, raw := range venue.PromotionsForTelemetry {
+		if m, ok := raw.(map[string]any); ok {
+			candidates = append(candidates, m)
+		}
+	}
+	pickDiscount := func() string {
+		for _, m := range candidates {
+			variant := strings.ToLower(strings.TrimSpace(stringValue(m["variant"])))
+			if strings.Contains(variant, "discount") || strings.Contains(variant, "promotion") {
+				if text := firstNonEmptyString(m, "text", "title", "name", "label", "description"); text != "" && !isWoltPlusText(text) {
+					return text
+				}
+			}
+		}
+		return ""
+	}
+	if top := pickDiscount(); top != "" {
+		return top
+	}
+	for _, m := range candidates {
+		if text := firstNonEmptyString(m, "text", "title", "name", "label", "description"); text != "" && !isWoltPlusText(text) {
+			return text
+		}
+	}
+	for _, raw := range venue.Promotions {
+		if s, ok := raw.(string); ok {
+			text := strings.TrimSpace(s)
+			if text != "" && !isWoltPlusText(text) {
+				return text
+			}
+		}
+	}
+	for _, badge := range venue.Badges {
+		text := strings.TrimSpace(badge.Text)
+		variant := strings.ToLower(strings.TrimSpace(badge.Variant))
+		if text == "" || isWoltPlusText(text) {
+			continue
+		}
+		if strings.Contains(variant, "discount") || strings.Contains(variant, "promotion") {
+			return text
+		}
+	}
+	return ""
 }
 
 func venuePromotionTexts(venue *domain.Venue) []string {

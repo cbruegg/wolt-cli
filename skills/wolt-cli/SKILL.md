@@ -65,11 +65,14 @@ Apply exactly:
 
 ## Command Selection
 
-- Explore nearby options: `venues`, `venues categories`
+- Discover with context (home-page style, grouped sections, sub-3-second): `feed`
+- Flat list / filtered search across all nearby venues: `venues`, `venues categories`
 - Inspect one venue deeply: `venue`, `venue categories`, `venue menu`, `venue hours`
 - Resolve one item/options for basket actions: `venue item`
 - Basket and pricing: `cart count/add/remove/clear`, then `checkout`
 - Account and history: `account`, `status`, `account orders/payments/addresses/favorites`
+
+Prefer `feed` for open-ended "what should I eat" queries — each row carries a tagline and the top discount offer, sourced from the same upstream call. `venues` is the right tool when the user already has a search term or filter in mind.
 
 For large marketplace venues, prefer:
 

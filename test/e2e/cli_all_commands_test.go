@@ -240,6 +240,103 @@ func TestSearchVenuesMergesDynamicPromotions(t *testing.T) {
 	}
 }
 
+func TestFeedRendersSectionedVenuesWithTaglineAndTopOffer(t *testing.T) {
+	woltPlusTrue := true
+	sections := []domain.Section{
+		{
+			Name:  "popular",
+			Title: "Popular near you",
+			Items: []domain.Item{
+				{
+					Title: "Bastard Burgers",
+					Link:  domain.Link{Target: "venue-1"},
+					Venue: &domain.Venue{
+						ID:               "venue-1",
+						Slug:             "bastard-burgers-mikonkatu",
+						Name:             "Bastard Burgers Mikonkatu",
+						ShortDescription: "Like a Bastard™",
+						Tags:             []string{"burger"},
+						Promotions: []any{
+							map[string]any{"text": "14 days of €0 delivery fees", "variant": "primary"},
+							map[string]any{"text": "20% off selected items", "variant": "discount"},
+						},
+						Rating:           &domain.Rating{Score: 8.6},
+						DeliveryPriceInt: intPtr(0),
+						Currency:         "EUR",
+						EstimateRange:    "15-25",
+						ShowWoltPlus:     true,
+					},
+				},
+			},
+		},
+		{
+			Name:  "fastest-delivery",
+			Title: "Fastest delivery",
+			Items: []domain.Item{
+				{
+					Title: "Kotipizza Kamppi",
+					Link:  domain.Link{Target: "venue-2"},
+					Venue: &domain.Venue{
+						ID:                 "venue-2",
+						Slug:               "kotipizza-kamppi",
+						Name:               "Kotipizza Kamppi",
+						ShortDescriptionV2: &domain.Translation{Lang: "fi", Value: "Kuuma, kuumempi, Kotipizza"},
+						Tags:               []string{"pizza"},
+						Promotions:         []any{map[string]any{"text": "Buy 2 meals pay 1", "variant": "discount"}},
+						Rating:             &domain.Rating{Score: 8.4},
+						DeliveryPriceInt:   intPtr(0),
+						Currency:           "EUR",
+						EstimateRange:      "10-20",
+						Online:             &woltPlusTrue,
+					},
+				},
+			},
+		},
+	}
+
+	deps := cli.Dependencies{
+		Wolt: &mockWolt{
+			sectionsFunc: func(context.Context, domain.Location) ([]domain.Section, error) {
+				return sections, nil
+			},
+		},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 60.1, Lon: 24.9}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+
+	exitCode, out := runCLIWithDeps(t, deps, "feed", "--format", "json")
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
+	}
+	payload := mustJSON(t, out)
+	data := asMapPayload(t, payload["data"])
+	sectionsOut := asSlicePayload(t, data["sections"])
+	if len(sectionsOut) != 2 {
+		t.Fatalf("expected 2 sections, got %d", len(sectionsOut))
+	}
+	first := asMapPayload(t, sectionsOut[0])
+	if first["title"] != "Popular near you" {
+		t.Fatalf("expected first section title 'Popular near you', got %v", first["title"])
+	}
+	firstItems := asSlicePayload(t, first["items"])
+	firstRow := asMapPayload(t, firstItems[0])
+	if firstRow["tagline"] != "Like a Bastard™" {
+		t.Fatalf("expected tagline to be surfaced, got %v", firstRow["tagline"])
+	}
+	if firstRow["top_offer"] != "20% off selected items" {
+		t.Fatalf("expected discount-variant promo to win as top_offer, got %v", firstRow["top_offer"])
+	}
+
+	second := asMapPayload(t, sectionsOut[1])
+	secondItems := asSlicePayload(t, second["items"])
+	secondRow := asMapPayload(t, secondItems[0])
+	if secondRow["tagline"] != "Kuuma, kuumempi, Kotipizza" {
+		t.Fatalf("expected localized tagline from short_description_v2, got %v", secondRow["tagline"])
+	}
+}
+
 func TestSearchVenuesSkipsEnrichmentByDefault(t *testing.T) {
 	enrichmentCalled := false
 	items := []domain.Item{

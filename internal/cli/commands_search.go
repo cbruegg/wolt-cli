@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/mekedron/wolt-cli/internal/service/observability"
 	"github.com/mekedron/wolt-cli/internal/service/output"
@@ -156,7 +157,7 @@ func newSearchVenuesCommand(deps Dependencies) *cobra.Command {
 }
 
 func buildVenueSearchTable(data map[string]any) string {
-	headers := []string{"Venue", "Slug", "Rating", "Delivery", "Fee", "Wolt+"}
+	headers := []string{"Venue", "Slug", "Tagline", "Top offer", "Rating", "Delivery", "Fee", "Wolt+"}
 	rows := [][]string{}
 	for _, value := range asSlice(data["items"]) {
 		item := asMap(value)
@@ -171,6 +172,8 @@ func buildVenueSearchTable(data map[string]any) string {
 		rows = append(rows, []string{
 			asString(item["name"]),
 			fallbackString(asString(item["slug"]), "-"),
+			truncateForTable(asString(item["tagline"]), 32),
+			truncateForTable(asString(item["top_offer"]), 26),
 			rating,
 			asString(item["delivery_estimate"]),
 			fee,
@@ -178,6 +181,18 @@ func buildVenueSearchTable(data map[string]any) string {
 		})
 	}
 	return output.RenderTable("Venue search: "+asString(data["query"]), headers, rows)
+}
+
+func truncateForTable(value string, max int) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "-"
+	}
+	if max <= 1 || len([]rune(value)) <= max {
+		return value
+	}
+	runes := []rune(value)
+	return string(runes[:max-1]) + "…"
 }
 
 func boolToYesNo(value bool) string {

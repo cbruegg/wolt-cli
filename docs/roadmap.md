@@ -39,6 +39,24 @@ wolt cart add --from-url https://wolt.com/.../venue/<slug>/itemid-<id> \
   --option "Drink=Cola" --count 2
 ```
 
+## Discovery enrichment beyond tagline + top offer
+
+`wolt feed` and `wolt venues` already surface `tagline` (from upstream
+`short_description`) and `top_offer` (preferring discount-variant
+promos). What's still missing from the same payload that we could
+surface without extra HTTP:
+
+- **Menu preview items** when populated (`venue_preview_items`) — most
+  useful for sponsored / featured rows, often shows a flagship dish.
+- **`badges_v2`** with icons — currently we only read the legacy
+  `badges` array; the newer payload field carries iconographic hints
+  ("coupon-fill", "wolt-plus") we could render as ASCII prefixes.
+- **Brand carousels** ("Popular stores", "Brands" sections on the home
+  page) — currently `feed` skips non-venue sections; could render them
+  as a compact "Brands: K-Market · Musti ja Mirri · ..." line.
+- **Grocery deals** section — distinct shape (product-card carousel
+  with old/new prices), would need its own row template.
+
 ## Smarter `venue menu` discovery
 
 - **`--show-options` flag on `venue menu`** that prints the option matrix

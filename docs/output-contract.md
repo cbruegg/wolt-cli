@@ -133,6 +133,7 @@ query?: string
 total: int
 items[]: {
   venue_id, slug, name, address,
+  tagline, top_offer,
   rating, delivery_estimate, delivery_fee,
   price_range, price_range_scale,
   promotions[], wolt_plus
@@ -142,8 +143,33 @@ items[]: {
 count, offset, limit, total_pages, next_offset, page
 ```
 
-Promotions get enriched with dynamic campaign banners when the upstream
-dynamic endpoint is available.
+`tagline` is the venue's marketing one-liner (`short_description` /
+`short_description_v2.value` from upstream). `top_offer` is the most
+prominent promo text — preference order: discount-variant promos, then
+any promo (excluding Wolt+ membership labels). Both come from the same
+front-page payload, no extra HTTP. With `--enrich`, `promotions` is
+backfilled with dynamic campaign banners.
+
+### `wolt feed` — DiscoveryFeed
+
+```
+city: string
+wolt_plus_only: bool
+sections[]: {
+  name: string             # internal name, e.g. "popular-restaurants"
+  title: string            # display title, e.g. "Popular near you"
+  items[]: {
+    venue_id, slug, name,
+    tagline, top_offer,
+    rating, delivery_estimate, delivery_fee,
+    price_range, price_range_scale,
+    promotions[], wolt_plus
+  }
+}
+```
+
+Same row shape as `venues`. Sections preserve the upstream ordering you
+see on wolt.com.
 
 ### `wolt venues categories` — CategoryList
 
