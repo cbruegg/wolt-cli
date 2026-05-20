@@ -31,19 +31,19 @@ func TestCommandOptionsHideSharedGlobals(t *testing.T) {
 		}
 	}
 
-	configure, found := findCommand(root, "configure")
+	login, found := findCommand(root, "login")
 	if !found {
-		t.Fatal("configure command not found")
+		t.Fatal("login command not found")
 	}
 	hasWToken := false
-	for _, option := range commandOptions(configure) {
+	for _, option := range commandOptions(login) {
 		if option.name == "wtoken" {
 			hasWToken = true
 			break
 		}
 	}
-	if hasWToken {
-		t.Fatal("expected configure command to avoid duplicate global wtoken option docs")
+	if !hasWToken {
+		t.Fatal("expected login command to document wtoken")
 	}
 }
 
@@ -55,8 +55,8 @@ func TestRenderRootHelpIncludesGlobalSection(t *testing.T) {
 	if !strings.Contains(out, "global options") {
 		t.Fatalf("expected global options in help output:\n%s", out)
 	}
-	if !strings.Contains(out, "--wtoken") {
-		t.Fatalf("expected wtoken in help output:\n%s", out)
+	if strings.Contains(out, "--wtoken") {
+		t.Fatalf("did not expect hidden wtoken in root help output:\n%s", out)
 	}
 }
 

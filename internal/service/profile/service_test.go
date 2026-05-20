@@ -33,13 +33,10 @@ func TestResolverFindDefault(t *testing.T) {
 }
 
 func TestResolverFindNamed(t *testing.T) {
-	resolver := profile.NewResolver(&stubLoader{cfg: domain.Config{Profiles: []domain.Profile{{Name: "work"}}}})
-	result, err := resolver.Find(context.Background(), "WORK")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.Name != "work" {
-		t.Fatalf("expected work profile, got %s", result.Name)
+	resolver := profile.NewResolver(&stubLoader{cfg: domain.Config{Profiles: []domain.Profile{{Name: "default", IsDefault: true}}}})
+	_, err := resolver.Find(context.Background(), "WORK")
+	if !errors.Is(err, profile.ErrProfileNotFound) {
+		t.Fatalf("expected ErrProfileNotFound for non-default account, got %v", err)
 	}
 }
 

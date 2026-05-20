@@ -158,35 +158,6 @@ func TestBuildBasketUpsertItemKeepsUnitPrice(t *testing.T) {
 	}
 }
 
-func TestBuildItemOptionsDataAndTable(t *testing.T) {
-	payload := map[string]any{
-		"price": map[string]any{"currency": "EUR"},
-		"option_groups": []any{
-			map[string]any{
-				"id":   "group-drink",
-				"name": "Drink",
-				"min":  1,
-				"max":  1,
-				"values": []any{
-					map[string]any{"id": "value-cola", "name": "Cola", "price": map[string]any{"amount": 100}},
-				},
-			},
-		},
-	}
-
-	data, warnings := buildItemOptionsData("venue-1", "item-1", payload, nil)
-	if len(warnings) != 0 {
-		t.Fatalf("expected no warnings, got %v", warnings)
-	}
-	if asInt(data["group_count"]) != 1 {
-		t.Fatalf("expected group_count=1, got %v", data["group_count"])
-	}
-	rendered := buildItemOptionsTable(data)
-	if !strings.Contains(rendered, "--option group-drink=value-cola") {
-		t.Fatalf("expected rendered example option, got:\n%s", rendered)
-	}
-}
-
 func TestBuildItemDetailTableFormatsGroups(t *testing.T) {
 	data := map[string]any{
 		"name":        "Combo",

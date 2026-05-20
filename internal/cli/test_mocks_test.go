@@ -10,6 +10,8 @@ import (
 type testWoltAPI struct {
 	refreshAccessTokenFn func(context.Context, string, woltgateway.AuthContext) (woltgateway.TokenRefreshResult, error)
 	deliveryInfoListFn   func(context.Context, woltgateway.AuthContext) (map[string]any, error)
+	restaurantByIDFn     func(context.Context, string) (*domain.Restaurant, error)
+	venuePageStaticFn    func(context.Context, string) (map[string]any, error)
 }
 
 func (m *testWoltAPI) FrontPage(context.Context, domain.Location) (map[string]any, error) {
@@ -24,7 +26,10 @@ func (m *testWoltAPI) Items(context.Context, domain.Location) ([]domain.Item, er
 	return nil, nil
 }
 
-func (m *testWoltAPI) RestaurantByID(context.Context, string) (*domain.Restaurant, error) {
+func (m *testWoltAPI) RestaurantByID(ctx context.Context, id string) (*domain.Restaurant, error) {
+	if m.restaurantByIDFn != nil {
+		return m.restaurantByIDFn(ctx, id)
+	}
 	return nil, nil
 }
 
@@ -32,7 +37,10 @@ func (m *testWoltAPI) Search(context.Context, domain.Location, string) (map[stri
 	return map[string]any{}, nil
 }
 
-func (m *testWoltAPI) VenuePageStatic(context.Context, string) (map[string]any, error) {
+func (m *testWoltAPI) VenuePageStatic(ctx context.Context, slug string) (map[string]any, error) {
+	if m.venuePageStaticFn != nil {
+		return m.venuePageStaticFn(ctx, slug)
+	}
 	return map[string]any{}, nil
 }
 

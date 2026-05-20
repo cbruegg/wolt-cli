@@ -32,7 +32,7 @@ func TestAuthStatusJSONWithToken(t *testing.T) {
 		Version:  "1.1.1",
 	}
 
-	exitCode, out := runCLIWithDeps(t, deps, "auth", "status", "--wtoken", "abc.def.ghi", "--format", "json")
+	exitCode, out := runCLIWithDeps(t, deps, "status", "--wtoken", "abc.def.ghi", "--format", "json")
 	if exitCode != 0 {
 		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
 	}
@@ -75,7 +75,7 @@ func TestProfileStatusJSONWithToken(t *testing.T) {
 		Version:  "1.1.1",
 	}
 
-	exitCode, out := runCLIWithDeps(t, deps, "profile", "status", "--wtoken", "abc.def.ghi", "--format", "json")
+	exitCode, out := runCLIWithDeps(t, deps, "status", "--wtoken", "abc.def.ghi", "--format", "json")
 	if exitCode != 0 {
 		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
 	}
@@ -116,7 +116,7 @@ func TestAuthStatusJSONWithChromeEncodedTokenPayload(t *testing.T) {
 	}
 
 	chromePayload := `{%22accessToken%22:%22abc.def.ghi%22%2C%22expirationTime%22:1771540095000}`
-	exitCode, out := runCLIWithDeps(t, deps, "auth", "status", "--wtoken", chromePayload, "--format", "json")
+	exitCode, out := runCLIWithDeps(t, deps, "status", "--wtoken", chromePayload, "--format", "json")
 	if exitCode != 0 {
 		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
 	}
@@ -150,7 +150,7 @@ func TestAuthStatusUsesProfileTokenWhenFlagMissing(t *testing.T) {
 		Version:  "1.1.1",
 	}
 
-	exitCode, out := runCLIWithDeps(t, deps, "auth", "status", "--format", "json")
+	exitCode, out := runCLIWithDeps(t, deps, "status", "--format", "json")
 	if exitCode != 0 {
 		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
 	}
@@ -188,7 +188,7 @@ func TestAuthStatusUsesProfileCookieTokenWhenFlagMissing(t *testing.T) {
 		Version:  "1.1.1",
 	}
 
-	exitCode, out := runCLIWithDeps(t, deps, "auth", "status", "--format", "json")
+	exitCode, out := runCLIWithDeps(t, deps, "status", "--format", "json")
 	if exitCode != 0 {
 		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
 	}
@@ -252,7 +252,7 @@ func TestAuthStatusAutoRefreshesExpiredTokenAndPersistsProfile(t *testing.T) {
 		Version:  "1.1.1",
 	}
 
-	exitCode, out := runCLIWithDeps(t, deps, "auth", "status", "--format", "json")
+	exitCode, out := runCLIWithDeps(t, deps, "status", "--format", "json")
 	if exitCode != 0 {
 		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
 	}
@@ -305,7 +305,7 @@ func TestCartShowJSON(t *testing.T) {
 		Version:  "1.1.1",
 	}
 
-	exitCode, out := runCLIWithDeps(t, deps, "cart", "show", "--wtoken", "token", "--format", "json")
+	exitCode, out := runCLIWithDeps(t, deps, "cart", "--wtoken", "token", "--format", "json")
 	if exitCode != 0 {
 		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
 	}
@@ -368,7 +368,7 @@ func TestCartShowTableWithDetails(t *testing.T) {
 		Version:  "1.1.1",
 	}
 
-	exitCode, out := runCLIWithDeps(t, deps, "cart", "show", "--wtoken", "token", "--details")
+	exitCode, out := runCLIWithDeps(t, deps, "cart", "--wtoken", "token", "--details")
 	if exitCode != 0 {
 		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
 	}
@@ -882,7 +882,7 @@ func TestCheckoutPreviewJSON(t *testing.T) {
 		Version:  "1.1.1",
 	}
 
-	exitCode, out := runCLIWithDeps(t, deps, "checkout", "preview", "--wtoken", "token", "--tip", "200", "--promo-code", "promo-1", "--format", "json")
+	exitCode, out := runCLIWithDeps(t, deps, "checkout", "--wtoken", "token", "--tip", "200", "--promo-code", "promo-1", "--format", "json")
 	if exitCode != 0 {
 		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
 	}
@@ -989,7 +989,7 @@ func TestCheckoutPreviewUsesVenuePayloadCategoryFallback(t *testing.T) {
 		Version:  "1.1.1",
 	}
 
-	exitCode, out := runCLIWithDeps(t, deps, "checkout", "preview", "--wtoken", "token", "--format", "json")
+	exitCode, out := runCLIWithDeps(t, deps, "checkout", "--wtoken", "token", "--format", "json")
 	if exitCode != 0 {
 		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
 	}
@@ -1046,7 +1046,7 @@ func TestCheckoutPreviewFallsBackCategoryToItemID(t *testing.T) {
 		Version:  "1.1.1",
 	}
 
-	exitCode, out := runCLIWithDeps(t, deps, "checkout", "preview", "--wtoken", "token", "--format", "json")
+	exitCode, out := runCLIWithDeps(t, deps, "checkout", "--wtoken", "token", "--format", "json")
 	if exitCode != 0 {
 		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
 	}
@@ -1127,7 +1127,7 @@ func TestCheckoutPreviewMultipleBasketsSelectionWarning(t *testing.T) {
 		Version:  "1.1.1",
 	}
 
-	exitCode, out := runCLIWithDeps(t, deps, "checkout", "preview", "--wtoken", "token", "--format", "json")
+	exitCode, out := runCLIWithDeps(t, deps, "checkout", "--wtoken", "token", "--format", "json")
 	if exitCode != 0 {
 		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
 	}
@@ -1191,7 +1191,7 @@ func TestProfileAddressesJSON(t *testing.T) {
 		Version:  "1.1.1",
 	}
 
-	exitCode, out := runCLIWithDeps(t, deps, "profile", "addresses", "--format", "json", "--wtoken", "token")
+	exitCode, out := runCLIWithDeps(t, deps, "account", "addresses", "--format", "json", "--wtoken", "token")
 	if exitCode != 0 {
 		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
 	}
@@ -1215,7 +1215,7 @@ func TestProfilePaymentsRequiresAuth(t *testing.T) {
 		Version:  "1.1.1",
 	}
 
-	exitCode, out := runCLIWithDeps(t, deps, "profile", "payments", "--format", "json")
+	exitCode, out := runCLIWithDeps(t, deps, "account", "payments", "--format", "json")
 	if exitCode != 1 {
 		t.Fatalf("expected exit 1, got %d\noutput:\n%s", exitCode, out)
 	}
@@ -1260,7 +1260,7 @@ func TestProfileFavoritesListJSON(t *testing.T) {
 		Version:  "1.1.1",
 	}
 
-	exitCode, out := runCLIWithDeps(t, deps, "profile", "favorites", "--wtoken", "token", "--format", "json")
+	exitCode, out := runCLIWithDeps(t, deps, "account", "favorites", "--wtoken", "token", "--format", "json")
 	if exitCode != 0 {
 		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
 	}
@@ -1315,8 +1315,7 @@ func TestProfileFavoritesAddBySlugJSON(t *testing.T) {
 	exitCode, out := runCLIWithDeps(
 		t,
 		deps,
-		"profile",
-		"favorites",
+		"account", "favorites",
 		"add",
 		"https://wolt.com/en/fin/espoo/restaurant/rioni-espoo",
 		"--wtoken",
@@ -1361,8 +1360,7 @@ func TestProfileFavoritesRemoveByIDJSON(t *testing.T) {
 	exitCode, out := runCLIWithDeps(
 		t,
 		deps,
-		"profile",
-		"favorites",
+		"account", "favorites",
 		"remove",
 		"5a8426f188b5de000b8857bb",
 		"--wtoken",
@@ -1436,8 +1434,7 @@ func TestProfileOrdersListJSON(t *testing.T) {
 	exitCode, out := runCLIWithDeps(
 		t,
 		deps,
-		"profile",
-		"orders",
+		"account", "orders",
 		"--wtoken",
 		"token",
 		"--limit",
@@ -1555,9 +1552,7 @@ func TestProfileOrdersShowJSON(t *testing.T) {
 	exitCode, out := runCLIWithDeps(
 		t,
 		deps,
-		"profile",
-		"orders",
-		"show",
+		"account", "order",
 		"purchase-1",
 		"--wtoken",
 		"token",
