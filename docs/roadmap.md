@@ -48,6 +48,9 @@ surface without extra HTTP:
 - **Grocery deals** section — distinct shape (product-card carousel
   with old/new prices), would need its own row template.
 
+See `docs/discovery-enrichment.md` for the detailed plan (field
+mapping, commit slicing, tests, risks, output-contract impact).
+
 ## Smarter `venue menu` discovery
 
 - **`--show-options` flag on `venue menu`** that prints the option matrix
