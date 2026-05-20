@@ -30,27 +30,28 @@ wolt --help
 - Start read-only by default.
 - Request explicit confirmation before mutating commands:
   - `cart add`, `cart remove`, `cart clear`
-  - `profile favorites add`, `profile favorites remove`
-  - `profile addresses add`, `profile addresses update`, `profile addresses remove`, `profile addresses use`
-  - `configure` (writes local profile credentials)
+  - `account favorites add`, `account favorites remove`
+  - `account addresses add`, `account addresses update`, `account addresses remove`, `account addresses use`
+  - `login` (opens browser or saves manual credentials)
 - Never describe `checkout preview` as order placement. The CLI does not place final orders.
 
 ## Auth Workflow
 
-Use explicit profile names to avoid ambiguity:
+Use the single saved account:
 
 ```bash
-wolt configure --profile-name default --wtoken "<token>" --wrtoken "<refresh-token>" --overwrite
-wolt profile status --profile default --format json --verbose
+wolt login                                      # browser-driven (managed Chrome at 127.0.0.1:9222)
+wolt login --wtoken "<jwt>" --wrtoken "<rt>"    # manual tokens
+wolt status --format json --verbose
 ```
 
-Credential fallback for authenticated commands:
+`wolt login` (no flags) opens the Wolt login page in managed Chrome and polls
+the Chrome DevTools cookie store every ~1.5s. It returns only after the user
+has actually signed in (a real `__wtoken` cookie is set); telemetry cookies
+do not satisfy the polling guard. Default timeout is 2 minutes.
 
-1. Explicit flags (`--wtoken`, `--wrtoken`, `--cookie`)
-2. Selected profile auth fields
-3. Default profile auth fields
-
-When refresh credentials are available, expired/401 access tokens are refreshed automatically and persisted back to local config.
+When refresh credentials are available, expired/401 access tokens are refreshed
+automatically and persisted back to local config.
 
 ## Location Rules
 
@@ -58,21 +59,21 @@ Apply exactly:
 
 - Use either `--address "<text>"` or both `--lat` + `--lon`.
 - Do not combine `--address` with `--lat/--lon`.
-- If no override is passed, profile location is used.
-- `search venues/items` and `venue show/hours` use `--address` or profile location (no direct `--lat/--lon` flags).
-- `discover`, `cart`, `checkout preview`, and `profile favorites` support `--lat/--lon`.
+- If no override is passed, current account location is used.
+- `venues` and `venue`/`venue hours` use `--address` or current account location (no direct `--lat/--lon` flags).
+- `venues`, `cart`, `checkout`, and `account favorites` support `--lat/--lon`.
 
 ## Command Selection
 
-- Explore nearby options: `discover feed`, `discover categories`, `search venues`, `search items`
-- Inspect one venue deeply: `venue show`, `venue categories`, `venue search`, `venue menu`, `venue hours`
-- Resolve one item/options for basket actions: `item show`, `item options`
-- Basket and pricing: `cart count/show/add/remove/clear`, then `checkout preview`
-- Account and history: `profile show/status/orders/payments/addresses/favorites`
+- Explore nearby options: `venues`, `venues categories`
+- Inspect one venue deeply: `venue`, `venue categories`, `venue menu`, `venue hours`
+- Resolve one item/options for basket actions: `venue item`
+- Basket and pricing: `cart count/add/remove/clear`, then `checkout`
+- Account and history: `account`, `status`, `account orders/payments/addresses/favorites`
 
 For large marketplace venues, prefer:
 
-- `venue search <slug> --query "<text>"`
+- `venue menu <slug> --query "<text>"`
 - `venue menu <slug> --category <category-slug>`
 
 instead of unrestricted full-catalog menu crawl.

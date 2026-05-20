@@ -3,9 +3,15 @@
 ## 1) Authenticate and Validate Session
 
 ```bash
-wolt configure --profile-name default --wtoken "<token>" --wrtoken "<refresh-token>" --overwrite
-wolt profile status --profile default --format json --verbose
-wolt profile show --profile default --format json
+# Browser-driven login (default): opens managed Chrome at 127.0.0.1:9222,
+# waits for the user to sign in to wolt.com, then extracts auth cookies.
+wolt login
+
+# Manual token login (no browser): pass tokens directly.
+wolt login --wtoken "<token>" --wrtoken "<refresh-token>"
+
+wolt status --format json --verbose
+wolt account --format json
 ```
 
 If status fails with upstream/auth errors, keep `--verbose` and surface exact error code/message.
@@ -14,19 +20,19 @@ If status fails with upstream/auth errors, keep `--verbose` and surface exact er
 
 ```bash
 # Discover/search
-wolt search venues --profile default --query "burger" --limit 10 --format json
-wolt venue show <venue-slug> --profile default --format json
+wolt venues  --query "burger" --limit 10 --format json
+wolt venue <venue-slug>  --format json
 
 # Resolve item and options
-wolt venue search <venue-slug> --query "whopper" --include-options --limit 10 --profile default --format json
-wolt item options <venue-slug> <item-id> --profile default --format json
+wolt venue menu <venue-slug> --query "whopper" --include-options --limit 10  --format json
+wolt venue item <venue-slug> <item-id>  --format json
 
 # Mutation (confirm with user first)
-wolt cart add <venue-id> <item-id> --venue-slug <venue-slug> --option "<group-id>=<value-id>" --profile default --format json
+wolt cart add <venue-id> <item-id> --venue-slug <venue-slug> --option "<group-id>=<value-id>"  --format json
 
 # Validate basket and pricing preview
-wolt cart show --venue-id <venue-id> --details --profile default --format json
-wolt checkout preview --venue-id <venue-id> --delivery-mode standard --profile default --format json
+wolt cart --venue-id <venue-id> --details  --format json
+wolt checkout --venue-id <venue-id> --delivery-mode standard  --format json
 ```
 
 ## 3) Large Marketplace Venue Strategy (Partial Assortments)
@@ -34,9 +40,9 @@ wolt checkout preview --venue-id <venue-id> --delivery-mode standard --profile d
 Use this path when `venue menu` is incomplete or returns partial-assortment guidance:
 
 ```bash
-wolt venue categories <venue-slug> --profile default --format json
-wolt venue search <venue-slug> --query "milk" --profile default --format json
-wolt venue menu <venue-slug> --category <category-slug> --include-options --profile default --format json
+wolt venue categories <venue-slug>  --format json
+wolt venue menu <venue-slug> --query "milk"  --format json
+wolt venue menu <venue-slug> --category <category-slug> --include-options  --format json
 ```
 
 Use `--full-catalog` only when explicitly needed; it can be slow.
@@ -44,10 +50,10 @@ Use `--full-catalog` only when explicitly needed; it can be slow.
 ## 4) Orders and Payment/Profile Inspection
 
 ```bash
-wolt profile orders --profile default --limit 20 --format json
-wolt profile orders show <purchase-id> --profile default --format json
-wolt profile payments --profile default --mask-sensitive --format json
-wolt profile favorites --profile default --format json
+wolt account orders  --limit 20 --format json
+wolt account order <purchase-id>  --format json
+wolt account payments  --mask-sensitive --format json
+wolt account favorites  --format json
 ```
 
 ## 5) Address Book Operations (Mutating)
@@ -55,10 +61,10 @@ wolt profile favorites --profile default --format json
 Confirm intent before add/update/remove/use.
 
 ```bash
-wolt profile addresses --profile default --format json
-wolt profile addresses add --profile default --address "<formatted>" --lat <lat> --lon <lon> --label home --format json
-wolt profile addresses links --profile default --format json
-wolt profile addresses use <address-id> --profile default --format json
+wolt account addresses  --format json
+wolt account addresses add  --address "<formatted>" --lat <lat> --lon <lon> --label home --format json
+wolt account addresses links  --format json
+wolt account addresses use <address-id>  --format json
 ```
 
 ## 6) Location Override Rules

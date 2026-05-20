@@ -7,13 +7,13 @@ It is not affiliated with Wolt. Use it at your own responsibility.
 
 ## What It Covers
 
-- discovery feed and category listing
+- venue browsing and category listing
 - venue and item search
 - venue details, menus, and hours
 - item detail and option matrix inspection
 - cart commands (`show`, `count`, `add`, `remove`, `clear`)
-- checkout projection (`checkout preview`, no order placement)
-- profile/auth commands (`status`, `show`, orders, addresses, payments, favorites)
+- checkout projection (`checkout`, no order placement)
+- single-account commands (`login`, `logout`, `status`, `account`)
 - token rotation using refresh token (`--wrtoken`)
 
 ## Requirements
@@ -51,22 +51,22 @@ go run ./cmd/wolt --help
 
 ## First Command to Run
 
-Configure a profile first:
+Log in first:
 
 ```bash
-wolt configure --profile-name default --wtoken "<token>" --wrtoken "<refresh-token>" --overwrite
+wolt login
 ```
 
-Configure auth in the same profile:
+Manual token login:
 
 ```bash
-wolt configure --profile-name default --wtoken "<token>" --wrtoken "<refresh-token>"
+wolt login --wtoken "<token>" --wrtoken "<refresh-token>"
 ```
 
 Cookie auth is also supported:
 
 ```bash
-wolt configure --profile-name default --cookie "__wtoken=<token>" --cookie "__wrtoken=<refresh-token>"
+wolt login --cookie "__wtoken=<token>" --cookie "__wrtoken=<refresh-token>"
 ```
 
 ## Config Location
@@ -81,14 +81,10 @@ Example config: `configs/example.config.json`
 
 Global flags for all leaf commands:
 - `--format [table|json|yaml]`
-- `--profile <name>`
 - `--address <text>` (temporary location override; geocoded to coordinates)
 - `--locale <bcp47>`
 - `--no-color`
 - `--verbose` (prints upstream HTTP request trace and detailed error diagnostics)
-- `--wtoken <token>`
-- `--wrtoken <token>`
-- `--cookie <name=value>` (repeatable)
 
 Shared location override flags for location-aware commands:
 - `--lat <float>`
@@ -104,13 +100,13 @@ Rules:
 `jq` lines are optional convenience helpers for extracting IDs.
 
 ```bash
-# 0) Validate auth/profile
-wolt profile status --verbose
-wolt profile show --format json
+# 0) Validate account
+wolt status --verbose
+wolt account --format json
 
 # 1) Find a venue (copy slug + venue_id from output)
-wolt search venues --query "burger king" --limit 10 --format json
-wolt search venues --query "burger king" --limit 10 --format json \
+wolt venues --query "burger king" --limit 10 --format json
+wolt venues --query "burger king" --limit 10 --format json \
   | jq -r '.data.items[] | "\(.slug)\t\(.venue_id)\t\(.name)"'
 
 # 2) Inspect venue products/menu
@@ -120,13 +116,13 @@ wolt venue menu burger-king-finnoo --include-options --format json \
 # for partial market assortments, use category-first flow:
 wolt venue categories wolt-market-niittari --format json \
   | jq -r '.data.categories[] | "\(.slug)\t\(.name)\tparent=\(.parent_slug // "-")"'
-wolt venue search wolt-market-niittari --query "milk" --format json
+wolt venue menu wolt-market-niittari --query "milk" --format json
 wolt venue menu wolt-market-niittari --category <category-slug> --include-options --format json
 
 # 3) Inspect a single WHOPPER meal item in detail (item_id from step 2)
-wolt item show burger-king-finnoo <item-id> --format json
-wolt item options burger-king-finnoo <item-id> --format json
-wolt item options burger-king-finnoo <item-id> --format json \
+wolt venue item burger-king-finnoo <item-id> --format json
+wolt venue item burger-king-finnoo <item-id> --format json
+wolt venue item burger-king-finnoo <item-id> --format json \
   | jq -r '.data.option_groups[] | .name as $g | .values[] | "\($g)\t\(.name)\t\(.example_option)"'
 
 # 4) Add custom WHOPPER meal with selected options (IDs from step 3)
@@ -147,8 +143,8 @@ wolt cart add 629f1f18480882d6f02c25f0 676939cb70769df4cec6cc6f \
   --format json
 
 # 5) Verify cart details and checkout preview (no order placement)
-wolt cart show --details --venue-id <venue-id> --format json
-wolt checkout preview --delivery-mode standard --venue-id <venue-id> --format json
+wolt cart --details --venue-id <venue-id> --format json
+wolt checkout --delivery-mode standard --venue-id <venue-id> --format json
 # checkout preview uses current inputs only; final checkout in Wolt uses your Wolt-saved address
 
 # Optional cleanup
@@ -158,12 +154,18 @@ wolt cart clear --venue-id <venue-id> --format json
 ## Other Common Flows
 
 ```bash
-wolt profile addresses --format json
-wolt profile orders --limit 20 --format json
-wolt profile orders show <purchase-id> --format json
-wolt profile payments --format json
-wolt profile favorites --format json
+wolt account addresses --format json
+wolt account orders --limit 20 --format json
+wolt account order <purchase-id> --format json
+wolt account payments --format json
+wolt account favorites --format json
 ```
+
+## Documentation
+
+- [`docs/commands.md`](docs/commands.md) — full command reference with flags and behavior
+- [`docs/output-contract.md`](docs/output-contract.md) — JSON/YAML envelope and per-command schemas
+- [`docs/roadmap.md`](docs/roadmap.md) — upcoming ergonomics (item URL/name resolution, etc.)
 
 ## Test and Lint
 
