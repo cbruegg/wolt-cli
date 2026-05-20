@@ -19,11 +19,14 @@ uses) and accepts only a unique match. Ambiguous queries return a
 "matched N items in <venue>" error with the top five candidate
 `Name (item-id)` pairs. Exact-name matches always beat substring hits.
 
+Single-arg URL form ships too: `wolt cart add <wolt-item-url>` and
+`wolt venue item <wolt-item-url>` accept just the URL since it carries
+both the slug and the item id. Falls back to the explicit
+`<venue> <item-id>` shape when the single arg is not a URL with both
+parts.
+
 Still open from this work:
 
-- **One-shot `cart add <wolt-item-url>`** — let the venue argument be
-  optional when the URL alone carries the slug. The resolver already
-  extracts the slug; needs the cobra arg shape to flex.
 - **Local cache of `slug → id`** so repeated `--query` and URL-driven
   flows skip the static venue lookup that resolves the venue id.
 

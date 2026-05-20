@@ -746,6 +746,77 @@ func TestItemShowJSON(t *testing.T) {
 	}
 }
 
+func TestVenueItemAcceptsSingleWoltItemURL(t *testing.T) {
+	var capturedVenueSlug, capturedItemID string
+	deps := cli.Dependencies{
+		Wolt: &mockWolt{
+			itemBySlugFunc: func(_ context.Context, _ domain.Location, slug string) (*domain.Item, error) {
+				return &domain.Item{
+					Title: "Bastard Burgers",
+					Link:  domain.Link{Target: "venue-1"},
+					Venue: buildVenue("venue-1", slug, "Mikonkatu 6"),
+				}, nil
+			},
+			venuePageStaticFunc: func(_ context.Context, slug string) (map[string]any, error) {
+				capturedVenueSlug = slug
+				return map[string]any{"venue": map[string]any{"id": "6348098a9157ab2b10bdaf65"}}, nil
+			},
+			venueItemPageFunc: func(_ context.Context, _ string, itemID string) (map[string]any, error) {
+				capturedItemID = itemID
+				return map[string]any{
+					"item_id":     itemID,
+					"name":        "The Bastard Classic Cheese",
+					"description": "House classic.",
+					"price":       map[string]any{"amount": 1450, "currency": "EUR"},
+				}, nil
+			},
+		},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 60.1, Lon: 24.9}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+
+	exitCode, out := runCLIWithDeps(
+		t,
+		deps,
+		"venue", "item",
+		"https://wolt.com/en/fin/helsinki/venue/bastard-burgers-mikonkatu/itemid-67dbda2656a6f0831337ecdb",
+		"--format", "json",
+	)
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
+	}
+	if capturedVenueSlug != "bastard-burgers-mikonkatu" {
+		t.Fatalf("expected venue slug extracted from URL, upstream saw %q", capturedVenueSlug)
+	}
+	if capturedItemID != "67dbda2656a6f0831337ecdb" {
+		t.Fatalf("expected item id extracted from URL, upstream saw %q", capturedItemID)
+	}
+	payload := mustJSON(t, out)
+	data := asMapPayload(t, payload["data"])
+	if data["item_id"] != "67dbda2656a6f0831337ecdb" {
+		t.Fatalf("expected envelope item_id from URL, got %v", data["item_id"])
+	}
+}
+
+func TestVenueItemSingleArgRequiresItemURL(t *testing.T) {
+	deps := cli.Dependencies{
+		Wolt:     &mockWolt{},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 60.1, Lon: 24.9}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+	exitCode, out := runCLIWithDeps(t, deps, "venue", "item", "burger-place", "--format", "json")
+	if exitCode == 0 {
+		t.Fatalf("expected non-zero exit when only a bare slug is provided, got 0; output:\n%s", out)
+	}
+	if !strings.Contains(out, "item id is required") {
+		t.Fatalf("expected actionable error, got:\n%s", out)
+	}
+}
+
 func asMapPayload(t *testing.T, value any) map[string]any {
 	t.Helper()
 	payload, ok := value.(map[string]any)

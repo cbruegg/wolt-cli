@@ -847,18 +847,37 @@ func newItemShowCommand(deps Dependencies) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <venue-slug> <item-id>",
 		Short: "Show item details by venue slug and item ID.",
-		Long:  "Show item details by venue slug and item ID.\n\n<item-id> accepts a 24-char Mongo ObjectID or a Wolt item URL (.../venue/<slug>/itemid-<id>).",
-		Args:  cobra.ExactArgs(2),
+		Long: "Show item details by venue slug and item ID.\n\n" +
+			"<item-id> accepts a 24-char Mongo ObjectID or a Wolt item URL\n" +
+			"(.../venue/<slug>/itemid-<id>). When the single positional arg is\n" +
+			"a Wolt item URL, the venue slug is read from the URL.",
+		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			venueRef, err := resolveVenueReference(cmd.Context(), deps, args[0])
+			venueArg := args[0]
+			itemArg := ""
+			if len(args) >= 2 {
+				itemArg = args[1]
+			}
+			// One-arg URL form: only positional value is a Wolt item URL with
+			// both the slug and the item id baked in.
+			if itemArg == "" {
+				if probe := resolveItemReference(venueArg); probe.ItemID != "" && probe.VenueSlugHint != "" {
+					itemArg = venueArg
+					venueArg = probe.VenueSlugHint
+				} else {
+					return fmt.Errorf("item id is required; pass it as the second argument or use a Wolt item URL that contains both the venue slug and the item id")
+				}
+			}
+
+			venueRef, err := resolveVenueReference(cmd.Context(), deps, venueArg)
 			if err != nil {
 				return err
 			}
-			venueSlug := fallbackString(venueRef.VenueSlug, normalizeVenueInput(args[0]))
-			itemRef := resolveItemReference(args[1])
+			venueSlug := fallbackString(venueRef.VenueSlug, normalizeVenueInput(venueArg))
+			itemRef := resolveItemReference(itemArg)
 			itemID := itemRef.ItemID
 			if itemID == "" {
-				trimmed := strings.TrimSpace(args[1])
+				trimmed := strings.TrimSpace(itemArg)
 				if looksURLShaped(trimmed) {
 					return fmt.Errorf("could not extract an item id from %q; expected a Wolt item URL like .../venue/<slug>/itemid-<id>", trimmed)
 				}

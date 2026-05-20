@@ -60,7 +60,7 @@ By default `venues` skips per-venue promotion/Wolt+ enrichment (single upstream 
 - `wolt venue categories <venue>`
 - `wolt venue menu <venue> [--query <text>] [--category <slug>] [--full-catalog] [--include-options] [--sort recommended|price|name] [--min-price <minor>] [--max-price <minor>] [--hide-sold-out] [--discounts-only] [--limit <n>] [--offset <n> | --page <n>]`
 - `wolt venue hours <venue> [--timezone <iana>] [--address ...]`
-- `wolt venue item <venue> <item-id>`
+- `wolt venue item <venue> <item-id|url>` (or `wolt venue item <wolt-item-url>` for the single-arg form)
 
 `venue menu` without `--query` returns the full menu; with `--query` it returns a venue-scoped item search (preferred for large marketplace catalogs). `venue item` includes option metadata so option group/value names can be passed straight to `cart add --option`.
 
@@ -69,6 +69,7 @@ By default `venues` skips per-venue promotion/Wolt+ enrichment (single upstream 
 - `wolt cart count`
 - `wolt cart [--venue-id <id>] [--details] [--address ... | --lat ... --lon ...]`
 - `wolt cart add <venue> <item-id|url> [--count <n>] [--option <group=value[:count]> ...] [--allow-substitutions] [--name ...] [--price ...] [--currency ...] [--venue-slug <slug>] [--lat ... --lon ...]`
+- `wolt cart add <wolt-item-url>` (single-arg: venue slug read from the URL)
 - `wolt cart add <venue> --query "<item name>"` (resolves a unique item by name via the venue menu search; errors on ambiguous matches)
 - `wolt cart remove <item-id|url> [--count <n>] [--all] [--venue-id <id>] [--address ... | --lat ... --lon ...]`
 - `wolt cart clear [--venue-id <id>] [--all] [--address ... | --lat ... --lon ...]`

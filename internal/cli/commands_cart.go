@@ -127,7 +127,9 @@ func newCartAddCommand(deps Dependencies) *cobra.Command {
 			"<item-id> accepts a 24-char Mongo ObjectID or a Wolt item URL\n" +
 			"(.../venue/<slug>/itemid-<id>). Omit <item-id> and pass\n" +
 			"--query \"<name>\" to look the item up by name in the venue menu\n" +
-			"(must match exactly one item).",
+			"(must match exactly one item). When the only positional arg is a\n" +
+			"Wolt item URL, the venue slug is read from the URL — no separate\n" +
+			"<venue> argument needed.",
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			format, err := parseOutputFormat(flags.Format)
@@ -143,7 +145,22 @@ func newCartAddCommand(deps Dependencies) *cobra.Command {
 				return err
 			}
 
-			venueID := strings.TrimSpace(args[0])
+			venueArg := args[0]
+			rawItem := ""
+			if len(args) >= 2 {
+				rawItem = args[1]
+			}
+			// One-arg URL form: when the only positional value is a Wolt item
+			// URL that yields both an item id and a venue slug hint, treat it
+			// as `cart add <slug-from-url> <item-url>`.
+			if rawItem == "" && looksURLShaped(strings.TrimSpace(venueArg)) {
+				if probe := resolveItemReference(venueArg); probe.ItemID != "" && probe.VenueSlugHint != "" {
+					rawItem = venueArg
+					venueArg = probe.VenueSlugHint
+				}
+			}
+
+			venueID := strings.TrimSpace(venueArg)
 			if resolved, resolveErr := resolveVenueReference(cmd.Context(), deps, venueID); resolveErr == nil {
 				venueID = resolved.VenueID
 				if strings.TrimSpace(venueSlug) == "" {
@@ -151,10 +168,6 @@ func newCartAddCommand(deps Dependencies) *cobra.Command {
 				}
 			}
 
-			rawItem := ""
-			if len(args) >= 2 {
-				rawItem = args[1]
-			}
 			itemRef := resolveItemReference(rawItem)
 			itemID := itemRef.ItemID
 			trimmedItem := strings.TrimSpace(rawItem)
@@ -176,7 +189,7 @@ func newCartAddCommand(deps Dependencies) *cobra.Command {
 				}
 				slugForLookup := strings.TrimSpace(venueSlug)
 				if slugForLookup == "" {
-					slugForLookup = strings.TrimSpace(args[0])
+					slugForLookup = strings.TrimSpace(venueArg)
 				}
 				if slugForLookup == "" {
 					return fmt.Errorf("--query requires a venue slug to search; pass the venue slug (or URL) as the first argument")

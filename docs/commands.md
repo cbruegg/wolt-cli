@@ -144,6 +144,7 @@ wolt venue menu <venue> [--query <text>] [--category <slug>]
 wolt venue categories <venue>
 wolt venue hours <venue> [--timezone <iana>]
 wolt venue item <venue> <item-id|url>
+wolt venue item <wolt-item-url>              # one-arg: venue read from URL
 ```
 
 `<venue>` accepts a slug, a 24-char Mongo ObjectID, or a Wolt URL
@@ -170,6 +171,7 @@ wolt cart add <venue> <item-id|url>
               [--name <text>] [--price <minor>]
               [--currency <code>]
               [--venue-slug <slug>]
+wolt cart add <wolt-item-url>                # one-arg: venue read from URL
 wolt cart add <venue> --query "<item name>"  # resolves to item id via menu search
 wolt cart remove <item-id|url> [--count <n>] [--all] [--venue-id <id>]
 wolt cart clear [--venue-id <id>] [--all]
@@ -180,7 +182,8 @@ Mongo ObjectID or a Wolt item URL of the form
 `https://wolt.com/<locale>/<country>/<city>/venue/<slug>/itemid-<id>`
 (`menuitem-<id>` and the same URL with `?itemid=<id>` also work). The
 slug embedded in the URL is reused for venue resolution when you
-haven't passed one explicitly.
+haven't passed one explicitly — `cart add` accepts the URL as a single
+argument (no separate `<venue>`) since it carries both pieces.
 
 `cart add --query "<text>"` is a one-shot path that calls the same
 assortment item search `venue menu --query` uses, requires a single

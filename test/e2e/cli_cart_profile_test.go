@@ -629,6 +629,56 @@ func TestCartAddByQueryRejectsAmbiguousMatch(t *testing.T) {
 	}
 }
 
+func TestCartAddOneArgURLDerivesVenueAndItem(t *testing.T) {
+	var resolvedSlug, resolvedItemID string
+	deps := cli.Dependencies{
+		Wolt: &mockWolt{
+			venuePageStaticFunc: func(_ context.Context, slug string) (map[string]any, error) {
+				resolvedSlug = slug
+				return map[string]any{"venue": map[string]any{"id": "6348098a9157ab2b10bdaf65"}}, nil
+			},
+			venueItemPageFunc: func(_ context.Context, _ string, itemID string) (map[string]any, error) {
+				resolvedItemID = itemID
+				return map[string]any{
+					"name":  "The Bastard Classic Cheese",
+					"price": map[string]any{"amount": 1450, "currency": "EUR"},
+				}, nil
+			},
+			addToBasketFunc: func(context.Context, map[string]any, woltgateway.AuthContext) (map[string]any, error) {
+				return map[string]any{"id": "basket-1", "venue_id": "6348098a9157ab2b10bdaf65"}, nil
+			},
+			basketCountFunc: func(context.Context, woltgateway.AuthContext) (map[string]any, error) {
+				return map[string]any{"count": 1}, nil
+			},
+			basketsPageFunc: func(context.Context, domain.Location, woltgateway.AuthContext) (map[string]any, error) {
+				return map[string]any{"baskets": []any{}}, nil
+			},
+		},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 60.1, Lon: 24.9}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+
+	exitCode, out := runCLIWithDeps(
+		t,
+		deps,
+		"cart", "add",
+		"https://wolt.com/en/fin/helsinki/venue/bastard-burgers-mikonkatu/itemid-67dbda2656a6f0831337ecdb",
+		"--wtoken", "token",
+		"--format", "json",
+	)
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
+	}
+	if resolvedSlug != "bastard-burgers-mikonkatu" {
+		t.Fatalf("expected venue slug extracted from URL, upstream saw %q", resolvedSlug)
+	}
+	if resolvedItemID != "67dbda2656a6f0831337ecdb" {
+		t.Fatalf("expected item id extracted from URL, upstream saw %q", resolvedItemID)
+	}
+}
+
 func TestCartAddRejectsBrokenURL(t *testing.T) {
 	deps := cli.Dependencies{
 		Wolt:     &mockWolt{},
