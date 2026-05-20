@@ -90,6 +90,7 @@ wolt venues [--query <text>]
             [--open-now] [--wolt-plus] [--promotions-only]
             [--min-rating <float>] [--max-delivery-fee <minor>]
             [--limit <n>] [--offset <n> | --page <n>]
+            [--enrich]
 wolt venues categories                       # nearby discovery categories
 ```
 
@@ -97,6 +98,12 @@ wolt venues categories                       # nearby discovery categories
 nearby venues. Default table is 6 columns (Venue, Slug, Rating,
 Delivery, Fee, Wolt+); JSON keeps the full payload including `address`,
 `promotions`, `price_range_scale`.
+
+**Speed**: by default `venues` does not hit per-venue promotion or
+Wolt+ endpoints — one upstream call, sub-second response. Pass
+`--enrich` to fetch dynamic campaign banners and resolve Wolt+ for
+venues whose flag is missing from the feed payload (slower; bounded by
+internal budgets). `--promotions-only` implies `--enrich`.
 
 ## `wolt venue`
 

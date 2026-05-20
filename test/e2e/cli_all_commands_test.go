@@ -218,7 +218,7 @@ func TestSearchVenuesMergesDynamicPromotions(t *testing.T) {
 		Version:  "1.1.1",
 	}
 
-	exitCode, out := runCLIWithDeps(t, deps, "venues", "--query", "burger", "--format", "json")
+	exitCode, out := runCLIWithDeps(t, deps, "venues", "--query", "burger", "--enrich", "--format", "json")
 	if exitCode != 0 {
 		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
 	}
@@ -237,6 +237,40 @@ func TestSearchVenuesMergesDynamicPromotions(t *testing.T) {
 	}
 	if !containsStringPayload(promotions, "40% off selected items") {
 		t.Fatalf("expected campaign promotion in promotions, got %v", promotions)
+	}
+}
+
+func TestSearchVenuesSkipsEnrichmentByDefault(t *testing.T) {
+	enrichmentCalled := false
+	items := []domain.Item{
+		{Title: "Burger Place", TrackID: "1", Link: domain.Link{Target: "venue-1"}, Venue: buildVenue("venue-1", "burger-place", "Burger Street")},
+	}
+	deps := cli.Dependencies{
+		Wolt: &mockWolt{
+			itemsFunc: func(context.Context, domain.Location) ([]domain.Item, error) {
+				return items, nil
+			},
+			venuePageDynamicFunc: func(context.Context, string, woltgateway.VenuePageDynamicOptions) (map[string]any, error) {
+				enrichmentCalled = true
+				return map[string]any{}, nil
+			},
+			venuePageStaticFunc: func(context.Context, string) (map[string]any, error) {
+				enrichmentCalled = true
+				return map[string]any{}, nil
+			},
+		},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 0, Lon: 0}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+
+	exitCode, _ := runCLIWithDeps(t, deps, "venues", "--query", "burger", "--format", "json")
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d", exitCode)
+	}
+	if enrichmentCalled {
+		t.Fatal("expected default venues call to skip per-venue enrichment; got upstream call")
 	}
 }
 

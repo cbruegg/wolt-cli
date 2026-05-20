@@ -40,7 +40,9 @@ Leaf commands share global flags unless noted:
 
 ## Venues
 
-- `wolt venues [--query <text>] [--sort ...] [--type ...] [--category ...] [--open-now] [--wolt-plus] [--promotions-only] [--min-rating <float>] [--max-delivery-fee <minor>] [--limit <n>] [--offset <n> | --page <n>] [--address ... | --lat ... --lon ...]`
+- `wolt venues [--query <text>] [--sort ...] [--type ...] [--category ...] [--open-now] [--wolt-plus] [--promotions-only] [--min-rating <float>] [--max-delivery-fee <minor>] [--enrich] [--limit <n>] [--offset <n> | --page <n>] [--address ... | --lat ... --lon ...]`
+
+By default `venues` skips per-venue promotion/Wolt+ enrichment (single upstream call, sub-second). Add `--enrich` to fetch dynamic campaign banners and resolve missing Wolt+ flags (slower; capped by internal budget). `--promotions-only` implies `--enrich`.
 - `wolt venues categories [--address ... | --lat ... --lon ...]`
 
 ## Venue

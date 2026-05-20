@@ -169,6 +169,9 @@ func enrichVenueRowsWithDynamicPromotions(
 		if _, attempted := staticAttempted[slug]; attempted {
 			return false
 		}
+		if len(staticAttempted) >= staticVenueWoltPlusFetchBudget {
+			return false
+		}
 		staticAttempted[slug] = struct{}{}
 		if lastStaticRequestAt != (time.Time{}) {
 			wait := staticVenueWoltPlusRequestPause - time.Since(lastStaticRequestAt)

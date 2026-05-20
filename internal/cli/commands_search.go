@@ -27,6 +27,7 @@ func newSearchVenuesCommand(deps Dependencies) *cobra.Command {
 	var maxDeliveryFee int
 	var maxDeliveryFeeSet bool
 	var promotionsOnly bool
+	var enrich bool
 
 	cmd := &cobra.Command{
 		Use:   "venues",
@@ -106,14 +107,20 @@ func newSearchVenuesCommand(deps Dependencies) *cobra.Command {
 			if pageSet {
 				data["page"] = page
 			}
-			promotionAuth := buildAuthContextWithProfile(cmd.Context(), deps, flags)
-			enrichVenueSearchRowsWithDynamicPromotions(
-				cmd.Context(),
-				deps,
-				data,
-				nil,
-				promotionAuth,
-			)
+			// Promotion + Wolt+ enrichment hits per-venue endpoints serially and is
+			// slow on a full feed. Default to the fast path; the caller opts in
+			// with --enrich (or implicitly via --promotions-only, which needs the
+			// labels to apply correctly).
+			if enrich || promotionsOnly {
+				promotionAuth := buildAuthContextWithProfile(cmd.Context(), deps, flags)
+				enrichVenueSearchRowsWithDynamicPromotions(
+					cmd.Context(),
+					deps,
+					data,
+					nil,
+					promotionAuth,
+				)
+			}
 
 			if format == output.FormatTable {
 				return writeTable(cmd, buildVenueSearchTable(data), flags.Output)
@@ -131,7 +138,8 @@ func newSearchVenuesCommand(deps Dependencies) *cobra.Command {
 	cmd.Flags().BoolVar(&woltPlus, "wolt-plus", false, "Only include Wolt+ venues")
 	cmd.Flags().Float64Var(&minRating, "min-rating", 0, "Minimum venue rating score (for example 8.5)")
 	cmd.Flags().IntVar(&maxDeliveryFee, "max-delivery-fee", 0, "Maximum delivery fee in minor units (for example 500 = EUR 5.00)")
-	cmd.Flags().BoolVar(&promotionsOnly, "promotions-only", false, "Only include venues with promotion labels")
+	cmd.Flags().BoolVar(&promotionsOnly, "promotions-only", false, "Only include venues with promotion labels (implies --enrich).")
+	cmd.Flags().BoolVar(&enrich, "enrich", false, "Fetch per-venue promotion banners and Wolt+ status (slower; off by default).")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Limit returned rows")
 	cmd.Flags().IntVar(&offset, "offset", 0, "Offset returned rows")
 	cmd.Flags().IntVar(&page, "page", 0, "1-based page number (requires --limit; cannot be combined with --offset)")
