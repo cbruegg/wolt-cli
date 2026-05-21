@@ -27,6 +27,7 @@ Leaf commands share global flags unless noted:
 - `status`
 - `account`
 - `feed`
+- `top`
 - `venues`
 - `venue`
 - `cart`
@@ -41,25 +42,31 @@ Leaf commands share global flags unless noted:
 
 ## Feed
 
-- `wolt feed [--section-limit <n>] [--per-section <n>] [--query <text>] [--address ... | --lat ... --lon ...]`
+- `wolt feed [--section-limit <n>] [--per-section <n>] [--query <text>] [--summary] [--show-highlights[=bool]] [--address ... | --lat ... --lon ...]`
 
-Mirrors the wolt.com home page: section-grouped venues with tagline + top discount offer per row. One upstream call, sub-3-second. Use for "I'm hungry, give me ideas" rather than `venues` (flat list).
+Mirrors the wolt.com home page: section-grouped venues with tagline + top discount offer per row. One upstream call, sub-3-second. Sections carry a `kind: "venues" | "brands"` discriminant — brand carousels (Popular stores, Restaurant categories, …) render as a single-line summary. Use `--summary` to collapse the whole feed into one line per section. `--show-highlights` defaults to auto (render iff at least one row has `menu_highlights[]`). `--query` matches against brand names too.
+
+## Top
+
+- `wolt top [N] [--limit <n>] [--offset <n> | --page <n>] [--query <text>] [--wolt-plus] [--show-highlights[=bool]] [--address ... | --lat ... --lon ...]`
+
+Flattens every `kind=venues` section of the discovery feed into a single ranked table, dedupes by `venue_id` preserving upstream order, and trims to N (default 10). The "what should I order right now" shortcut. Same row shape as `wolt venues`.
 
 ## Venues
 
-- `wolt venues [--query <text>] [--sort ...] [--type ...] [--category ...] [--open-now] [--wolt-plus] [--promotions-only] [--min-rating <float>] [--max-delivery-fee <minor>] [--enrich] [--limit <n>] [--offset <n> | --page <n>] [--address ... | --lat ... --lon ...]`
+- `wolt venues [--query <text>] [--sort ...] [--type ...] [--category ...] [--open-now] [--wolt-plus] [--promotions-only] [--min-rating <float>] [--max-delivery-fee <minor>] [--enrich] [--show-highlights[=bool]] [--limit <n>] [--offset <n> | --page <n>] [--address ... | --lat ... --lon ...]`
 
-By default `venues` skips per-venue promotion/Wolt+ enrichment (single upstream call, sub-second). Add `--enrich` to fetch dynamic campaign banners and resolve missing Wolt+ flags (slower; capped by internal budget). `--promotions-only` implies `--enrich`.
-- `wolt venues categories [--address ... | --lat ... --lon ...]`
+By default `venues` skips per-venue promotion/Wolt+ enrichment (single upstream call, sub-second). Add `--enrich` to fetch dynamic campaign banners and resolve missing Wolt+ flags (slower; capped by internal budget). `--promotions-only` implies `--enrich`. `--sort` accepts both `delivery_time`/`delivery_price` and the hyphenated `delivery-time`/`delivery-price` forms.
+- `wolt venues categories [--limit <n>] [--offset <n> | --page <n>] [--address ... | --lat ... --lon ...]`
 
 ## Venue
 
 `<venue>` accepts slug, 24-char Mongo ObjectID, or a Wolt URL.
 
 - `wolt venue <venue> [--include hours,tags,rating,fees] [--address ...]`
-- `wolt venue categories <venue>`
+- `wolt venue categories <venue> [--limit <n>] [--offset <n> | --page <n>]`
 - `wolt venue menu <venue> [--query <text>] [--category <slug>] [--full-catalog] [--include-options] [--sort recommended|price|name] [--min-price <minor>] [--max-price <minor>] [--hide-sold-out] [--discounts-only] [--limit <n>] [--offset <n> | --page <n>]`
-- `wolt venue hours <venue> [--timezone <iana>] [--address ...]`
+- `wolt venue hours <venue> [--timezone <iana>] [--address ...]` — falls back to opening windows derived from the static venue payload when the structured restaurant endpoint returns 410.
 - `wolt venue item <venue> <item-id|url>` (or `wolt venue item <wolt-item-url>` for the single-arg form)
 
 `venue menu` without `--query` returns the full menu; with `--query` it returns a venue-scoped item search (preferred for large marketplace catalogs). `venue item` includes option metadata so option group/value names can be passed straight to `cart add --option`.
@@ -94,6 +101,6 @@ Preview only. No final order placement.
 - `wolt account addresses remove <address-id>`
 - `wolt account addresses use <address-id>`
 - `wolt account addresses links [address-id]`
-- `wolt account favorites [--address ... | --lat ... --lon ...]`
+- `wolt account favorites [--limit <n>] [--offset <n> | --page <n>] [--address ... | --lat ... --lon ...]`
 - `wolt account favorites add <venue-id-or-slug>`
 - `wolt account favorites remove <venue-id-or-slug>`

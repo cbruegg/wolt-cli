@@ -1,6 +1,6 @@
 # Commands
 
-`wolt-cli` exposes eight top-level commands. Every leaf command supports
+`wolt-cli` exposes ten top-level commands. Every leaf command supports
 the same machine output (`--format table|json|yaml`) and the same global
 flags listed at the bottom of this page.
 
@@ -11,6 +11,7 @@ flags listed at the bottom of this page.
 | `wolt status` | Probe whether the saved account is still authenticated. |
 | `wolt account` | Show account profile, orders, addresses, payments, favorites. |
 | `wolt feed` | Browse the home-page-style discovery feed grouped by section. |
+| `wolt top` | Flatten the feed into a single top-N ranked table. |
 | `wolt venues` | Browse or search nearby venues as a flat list. |
 | `wolt venue` | Inspect one venue: details, menu, hours, items, categories. |
 | `wolt cart` | Read or mutate the saved basket draft. |
@@ -73,36 +74,86 @@ wolt account addresses links [id]           # Google Maps validation URLs
 wolt account orders [--limit 1-50] [--page-token <t>] [--status <s>]
 wolt account order <purchase-id>            # one order detail
 wolt account payments [--mask-sensitive]
-wolt account favorites
+wolt account favorites [--limit <n>] [--offset <n> | --page <n>]
 wolt account favorites add <venue|slug|url>
 wolt account favorites remove <venue|slug|url>
 ```
 
-All `account *` subcommands require a logged-in session. Address mutation
-endpoints write to `https://restaurant-api.wolt.com/v2/delivery/info`.
+All `account *` subcommands require a logged-in session. When the saved
+token expires, every auth-gated command exits with a friendly hint —
+`WOLT_AUTH_REQUIRED: "Your Wolt session expired or is missing. Run
+\"wolt login\" to refresh."` — instead of a raw status code. Address
+mutation endpoints write to `https://restaurant-api.wolt.com/v2/delivery/info`.
 
 ## `wolt feed`
 
 ```console
 wolt feed [--section-limit <n>] [--per-section <n>]
           [--query <text>]
+          [--summary]
+          [--show-highlights[=true|false]]
           [--address "<text>" | --lat <f> --lon <f>]
 ```
 
 Renders the same section structure you see on wolt.com — "Popular near
-you", "Order again", "Fastest delivery", "Top-rated", etc. — with
-marketing context per row (tagline, top discount offer, rating, ETA).
-One upstream call, no per-venue enrichment, sub-3-second.
+you", "Order again", "Fastest delivery", "Top-rated", "Popular stores",
+"Restaurant categories", etc. — with marketing context per row (tagline,
+top discount offer, rating, ETA). One upstream call, no per-venue
+enrichment, sub-3-second.
 
 Each row in JSON carries `name`, `slug`, `tagline`, `top_offer`,
 `rating`, `delivery_estimate`, `delivery_fee`, `price_range`,
-`promotions`, `wolt_plus`, plus `venue_id` for chaining into `cart add`
-or `venue menu`. The default table shows the action-relevant columns
-truncated to fit (≤32 chars for tagline, ≤26 for top offer).
+`promotions`, `badges`, `menu_highlights`, `wolt_plus`, plus `venue_id`
+for chaining into `cart add` or `venue menu`. Sections carry a
+`kind: "venues" | "brands"` discriminant — brand carousels render as a
+single-line summary instead of a per-venue table. The default table
+shows the action-relevant columns truncated to fit (≤32 chars for
+tagline, ≤26 for top offer).
+
+The venue cell is prefixed with single-rune glyphs derived from the
+icon-bearing `badges_v2` payload (`+ Wolt+`, `% 20% off`, `⚡ Fast`,
+`◷ Schedule`, `★ New`). Set `WOLT_BADGES_PLAIN=1` to fall back to
+bracketed-text labels (`[Wolt+]`, `[20% off]`) when your terminal
+doesn't render the glyphs cleanly.
+
+`--summary` prints one line per section (`Section · Kind · Count · Top
+items`) instead of full per-section tables — useful for getting a quick
+glance at what's on the home page right now.
 
 `--per-section` caps the per-section rows shown in the table (default 6);
 JSON keeps the full upstream slice. `--query` filters venues by name,
-tagline, top-offer, or slug across all sections; empty sections drop out.
+tagline, top-offer, or slug across all sections; in brand sections it
+matches against `brands[].name`. Empty sections drop out.
+
+`--show-highlights` defaults to **auto** — the Highlights column
+(`menu_highlights[]` from upstream `venue_preview_items`) appears only
+when at least one row in the table has data. Pass
+`--show-highlights=false` to force-hide it.
+
+## `wolt top`
+
+```console
+wolt top [N]                                # default 10
+         [--limit <n>] [--offset <n> | --page <n>]
+         [--query <text>]
+         [--wolt-plus]
+         [--show-highlights[=true|false]]
+         [--address "<text>" | --lat <f> --lon <f>]
+```
+
+Flattens every venue section of the discovery feed into a single ranked
+table, dedupes by `venue_id` while preserving upstream order, and trims
+to N (default 10). Brand carousels are excluded. The fastest path from
+"I'm hungry" to a shortlist — no `jq` required.
+
+```console
+wolt top 5
+wolt top --query pizza
+wolt top --wolt-plus --limit 8
+```
+
+Same row shape as `wolt venues`. The same badge-glyph prefix and
+auto-mode Highlights column apply.
 
 ## `wolt venues`
 
@@ -114,16 +165,27 @@ wolt venues [--query <text>]
             [--open-now] [--wolt-plus] [--promotions-only]
             [--min-rating <float>] [--max-delivery-fee <minor>]
             [--limit <n>] [--offset <n> | --page <n>]
+            [--show-highlights[=true|false]]
             [--enrich]
-wolt venues categories                       # nearby discovery categories
+wolt venues categories [--limit <n>] [--offset <n> | --page <n>]
 ```
 
 `--query` filters by venue name or slug. Without `--query`, returns
 nearby venues. Default table is 8 columns: Venue, Slug, Tagline,
 Top offer, Rating, Delivery, Fee, Wolt+ — the tagline (Wolt
 `short_description`) and top discount offer come from the same payload,
-no extra HTTP. JSON keeps the full payload including `address`,
-`promotions`, `price_range_scale`.
+no extra HTTP. The venue cell is prefixed with badge glyphs (see
+`wolt feed` for the icon → glyph map). JSON keeps the full payload
+including `address`, `promotions`, `badges`, `menu_highlights`,
+`price_range_scale`.
+
+`--sort` accepts both `delivery_time`/`delivery_price` and the
+hyphenated `delivery-time`/`delivery-price` forms — typing either is
+fine.
+
+`--show-highlights` defaults to **auto** — the column appears only
+when at least one row carries `menu_highlights[]` data. Force-show
+with `--show-highlights`; force-hide with `--show-highlights=false`.
 
 **Speed**: by default `venues` does not hit per-venue promotion or
 Wolt+ endpoints — one upstream call, sub-second response. Pass
@@ -141,11 +203,16 @@ wolt venue menu <venue> [--query <text>] [--category <slug>]
                         [--min-price <minor>] [--max-price <minor>]
                         [--hide-sold-out] [--discounts-only]
                         [--limit <n>] [--offset <n> | --page <n>]
-wolt venue categories <venue>
+wolt venue categories <venue> [--limit <n>] [--offset <n> | --page <n>]
 wolt venue hours <venue> [--timezone <iana>]
 wolt venue item <venue> <item-id|url>
 wolt venue item <wolt-item-url>              # one-arg: venue read from URL
 ```
+
+`venue hours` derives opening windows from the static venue payload
+when Wolt's structured restaurant endpoint is unavailable (the legacy
+`/v3/venues` endpoint now returns 410 for non-app clients). Output is
+the same `[{day, open, close}]` shape per weekday.
 
 `<venue>` accepts a slug, a 24-char Mongo ObjectID, or a Wolt URL
 (e.g. `https://wolt.com/en/fin/helsinki/venue/<slug>`). The CLI extracts

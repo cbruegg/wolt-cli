@@ -7,14 +7,16 @@ It is not affiliated with Wolt. Use it at your own responsibility.
 
 ## What It Covers
 
-- venue browsing and category listing
-- venue and item search
-- venue details, menus, and hours
-- item detail and option matrix inspection
-- cart commands (`show`, `count`, `add`, `remove`, `clear`)
+- discovery feed grouped by section (`wolt feed`), with `--summary` for a one-line-per-section overview
+- top-N flattened picks across the feed (`wolt top`) — the "what should I eat right now" shortcut
+- venue browsing, filtering, sorting, and category listing (`wolt venues`)
+- venue details, menus (with `--query` / `--category`), hours, and item drilldown
+- option matrix inspection and option resolution by name (`--option "Drink=Cola"`)
+- cart commands (`cart`, `cart count`, `cart add`, `cart remove`, `cart clear`)
 - checkout projection (`checkout`, no order placement)
 - single-account commands (`login`, `logout`, `status`, `account`)
-- token rotation using refresh token (`--wrtoken`)
+- discovery enrichments: `menu_highlights[]` from `venue_preview_items`, badge glyphs in the venue cell from `badges_v2`, brand carousels ("Popular stores", "Restaurant categories") as one-line summaries
+- token rotation using the refresh token (`--wrtoken`)
 
 ## Requirements
 
@@ -95,77 +97,101 @@ Rules:
 - `--address` cannot be combined with `--lat/--lon`
 - location overrides are preview inputs only; final order placement in Wolt uses the delivery address selected in your Wolt account
 
-## Example: Find Venue, Inspect Options, Add a Custom WHOPPER Meal
+## Quick Tour
 
-`jq` lines are optional convenience helpers for extracting IDs.
+The fastest path from "I'm hungry" to a planned cart:
 
 ```bash
-# 0) Validate account
+# What's good near me right now? (single ranked table; no jq needed)
+wolt top 10
+
+# Glance the whole home page in one screen (one line per section)
+wolt feed --summary
+
+# Drill into a venue
+wolt venue noodle-story-kamppi
+wolt venue menu noodle-story-kamppi --query "udon"
+
+# Add by name (resolves to item id via the venue search)
+wolt cart add noodle-story-kamppi --query "Teriyaki Udon"
+
+# Preview totals without placing an order
+wolt checkout
+```
+
+## Example: Find a Venue, Inspect Options, Build a Cart
+
+```bash
+# 0) Validate account (friendly hint when the session expires)
 wolt status --verbose
 wolt account --format json
 
-# 1) Find a venue (copy slug + venue_id from output)
-wolt venues --query "burger king" --limit 10 --format json
-wolt venues --query "burger king" --limit 10 --format json \
-  | jq -r '.data.items[] | "\(.slug)\t\(.venue_id)\t\(.name)"'
+# 1) Find a venue
+wolt venues --query "burger king" --limit 10
+# Want a single ranked list across all curated sections? Use top:
+wolt top 10 --query burger
 
-# 2) Inspect venue products/menu
-wolt venue menu burger-king-finnoo --include-options --format json
-wolt venue menu burger-king-finnoo --include-options --format json \
-  | jq -r '.data.items[] | select(.name|test("whopper"; "i")) | "\(.item_id)\t\(.name)\t\(.base_price.amount)"'
-# for partial market assortments, use category-first flow:
-wolt venue categories wolt-market-niittari --format json \
-  | jq -r '.data.categories[] | "\(.slug)\t\(.name)\tparent=\(.parent_slug // "-")"'
-wolt venue menu wolt-market-niittari --query "milk" --format json
-wolt venue menu wolt-market-niittari --category <category-slug> --include-options --format json
+# 2) Inspect a venue's menu (one of two paths)
+wolt venue menu burger-king-finnoo --include-options              # full menu
+wolt venue menu burger-king-finnoo --query "whopper" --include-options  # search
 
-# 3) Inspect a single WHOPPER meal item in detail (item_id from step 2)
-wolt venue item burger-king-finnoo <item-id> --format json
-wolt venue item burger-king-finnoo <item-id> --format json
-wolt venue item burger-king-finnoo <item-id> --format json \
-  | jq -r '.data.option_groups[] | .name as $g | .values[] | "\($g)\t\(.name)\t\(.example_option)"'
+# For big marketplace catalogs prefer the category-first flow:
+wolt venue categories wolt-market-niittari --limit 30
+wolt venue menu wolt-market-niittari --category <category-slug> --include-options
 
-# 4) Add custom WHOPPER meal with selected options (IDs from step 3)
-wolt cart add <venue-id> <item-id> \
-  --venue-slug burger-king-finnoo \
+# 3) Inspect a single item (URL form works too)
+wolt venue item burger-king-finnoo <item-id>
+wolt venue item "https://wolt.com/en/fin/espoo/venue/burger-king-finnoo/itemid-<id>"
+
+# 4a) Add by item id with explicit option ids (most precise)
+wolt cart add burger-king-finnoo <item-id> \
   --option "<drink-group-id>=<drink-value-id>" \
   --option "<side-group-id>=<side-value-id>" \
-  --option "<addons-group-id>=<addons-value-id>" \
-  --count 1 \
-  --format json
+  --count 1
 
-# Real-world example captured on 2026-02-20 in en-FI locale:
-wolt cart add 629f1f18480882d6f02c25f0 676939cb70769df4cec6cc6f \
-  --venue-slug burger-king-finnoo \
-  --option "69958f7a0ccf540d98667a70=69958f777cb002552fad3d3d" \
-  --option "6995b941621e894833915306=6995b93d45f708d8b1ad1345" \
-  --option "69958f7a0ccf540d98667a73=69958f777cb002552fad3d51" \
-  --format json
+# 4b) Add by name with option values resolved by name (most ergonomic)
+wolt cart add burger-king-finnoo --query "WHOPPER Meal" \
+  --option "Drink=Coca-Cola Zero" \
+  --option "Side=Fries L" \
+  --count 1
 
-# 5) Verify cart details and checkout preview (no order placement)
-wolt cart --details --venue-id <venue-id> --format json
-wolt checkout --delivery-mode standard --venue-id <venue-id> --format json
-# checkout preview uses current inputs only; final checkout in Wolt uses your Wolt-saved address
+# 5) Verify cart and preview checkout (no order placement)
+wolt cart --details --venue-id <venue-id>
+wolt checkout --delivery-mode standard --venue-id <venue-id>
+# Final order placement still happens in the official Wolt app/website.
 
 # Optional cleanup
-wolt cart clear --venue-id <venue-id> --format json
+wolt cart clear --venue-id <venue-id>
 ```
 
 ## Other Common Flows
 
 ```bash
-wolt account addresses --format json
-wolt account orders --limit 20 --format json
-wolt account order <purchase-id> --format json
-wolt account payments --format json
-wolt account favorites --format json
+wolt account addresses
+wolt account orders --limit 20
+wolt account order <purchase-id>
+wolt account payments
+wolt account favorites --limit 20
 ```
+
+## Rendering Notes
+
+- Tables are column-aligned via the standard library's `tabwriter`. The
+  `Highlights` column auto-renders when at least one row has data (force
+  with `--show-highlights`, hide with `--show-highlights=false`).
+- Badge glyphs are prefixed to the venue cell (`+ Wolt+`, `% 20% off`,
+  `⚡ Fast`). If your terminal renders them as boxes, set
+  `WOLT_BADGES_PLAIN=1` for a bracketed-text fallback (`[Wolt+]`).
+- Brand carousels ("Popular stores", "Restaurant categories", …) appear
+  in `wolt feed` as a single-line summary; `wolt feed --query <text>`
+  matches against brand names as well as venues.
 
 ## Documentation
 
 - [`docs/commands.md`](docs/commands.md) — full command reference with flags and behavior
 - [`docs/output-contract.md`](docs/output-contract.md) — JSON/YAML envelope and per-command schemas
-- [`docs/roadmap.md`](docs/roadmap.md) — upcoming ergonomics (item URL/name resolution, etc.)
+- [`docs/discovery-enrichment.md`](docs/discovery-enrichment.md) — design notes on `venue_preview_items`, `badges_v2`, and brand carousels
+- [`docs/roadmap.md`](docs/roadmap.md) — upcoming ergonomics
 
 ## Test and Lint
 

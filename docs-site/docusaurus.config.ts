@@ -35,6 +35,9 @@ const config: Config = {
     locales: ['en'],
   },
   markdown: {
+    // CommonMark for .md files (so `<venue>` etc. in command syntax stays
+    // text rather than tripping the JSX parser); MDX still active for .mdx.
+    format: 'detect',
     mermaid: true,
   },
   themes: ['@docusaurus/theme-mermaid'],
@@ -117,28 +120,20 @@ const config: Config = {
           title: 'Documentation',
           items: [
             {
-              label: 'Installation',
-              to: '/docs/cli-installation',
+              label: 'Command reference',
+              to: '/docs/commands',
             },
             {
-              label: 'CLI overview',
-              to: '/docs/cli-overview',
+              label: 'Output contract',
+              to: '/docs/output-contract',
             },
             {
-              label: 'Auth and profiles',
-              to: '/docs/cli-auth',
+              label: 'Discovery enrichment',
+              to: '/docs/discovery-enrichment',
             },
             {
-              label: 'Cart and checkout',
-              to: '/docs/cli-cart-checkout',
-            },
-            {
-              label: 'Venue and items',
-              to: '/docs/cli-venue-item',
-            },
-            {
-              label: 'Profile commands',
-              to: '/docs/cli-orders-profile',
+              label: 'Roadmap',
+              to: '/docs/roadmap',
             },
           ],
         },

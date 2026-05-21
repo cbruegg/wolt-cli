@@ -65,14 +65,31 @@ Apply exactly:
 
 ## Command Selection
 
-- Discover with context (home-page style, grouped sections, sub-3-second): `feed`
-- Flat list / filtered search across all nearby venues: `venues`, `venues categories`
-- Inspect one venue deeply: `venue`, `venue categories`, `venue menu`, `venue hours`
-- Resolve one item/options for basket actions: `venue item`
-- Basket and pricing: `cart count/add/remove/clear`, then `checkout`
-- Account and history: `account`, `status`, `account orders/payments/addresses/favorites`
+- "What should I eat right now?" — `top [N]` returns a single ranked
+  table flattened across all curated venue sections.
+- "What's on the home page?" — `feed --summary` prints one line per
+  section (`title · kind · count · top items`). Use full `feed` only
+  when you need per-section detail.
+- Discover with context (home-page style, grouped sections,
+  sub-3-second): `feed`. Sections classify as `kind: "venues"` or
+  `kind: "brands"`; brand carousels render as a single one-line summary.
+- Flat list / filtered search across all nearby venues: `venues`,
+  `venues categories` (paginated).
+- Inspect one venue deeply: `venue`, `venue categories` (paginated),
+  `venue menu`, `venue hours`.
+- Resolve one item/options for basket actions: `venue item`.
+- Basket and pricing: `cart count/add/remove/clear`, then `checkout`.
+- Account and history: `account`, `status`, `account
+  orders/payments/addresses/favorites` (favorites is paginated).
 
-Prefer `feed` for open-ended "what should I eat" queries — each row carries a tagline and the top discount offer, sourced from the same upstream call. `venues` is the right tool when the user already has a search term or filter in mind.
+Prefer `top` over manually parsing `feed` for "I'm hungry"-style
+queries. Prefer `feed --summary` when the user wants an overview rather
+than a long list. `venues` is the right tool when the user already has
+a search term or filter in mind. Each venue row in `feed`/`top`/`venues`
+carries `tagline`, `top_offer`, `badges` (icon-bearing badges from
+upstream `badges_v2`), and `menu_highlights` (flagship dishes from
+upstream `venue_preview_items`) — all sourced from the same upstream
+call.
 
 For large marketplace venues, prefer:
 

@@ -169,17 +169,19 @@ function Hero() {
         <div className="hero__copy">
           <span className="eyebrow">
             <span className="eyebrow__dot" />
-            v0 · Community Go CLI · MIT
+            v1 · Community Go CLI · MIT
           </span>
           <h1 className="hero__title">
-            Browse, search, and cart
+            Discover, browse, and cart
             <br />
             <span className="grad">without leaving the terminal.</span>
           </h1>
           <p className="hero__lede">
             <strong>wolt-cli</strong> is an unofficial, community-built Go CLI for
-            interacting with Wolt endpoints. Discovery feed, venue search, menus,
-            option matrices, carts, checkout preview — straight from your shell.
+            interacting with Wolt endpoints. <code>wolt top</code> for the
+            "what should I eat right now" view, <code>wolt feed --summary</code>{' '}
+            to glance the whole home page in one screen, plus venue drilldown,
+            cart, and checkout preview — straight from your shell.
           </p>
 
           <div className="install-row" aria-label="Quick install">
@@ -226,29 +228,30 @@ function Hero() {
           </div>
           <pre className="terminal__body">
             <code>
-              <span className="t-mut">$</span> <span className="t-fn">wolt</span> search venues --query "burger king" --limit 5{'\n'}
-              <span className="t-mut">┌─────────────────────────────────┬──────────────────────────┬──────────┐</span>{'\n'}
-              <span className="t-mut">│</span> <span className="t-hd">SLUG</span>                            <span className="t-mut">│</span> <span className="t-hd">NAME</span>                     <span className="t-mut">│</span> <span className="t-hd">ETA</span>      <span className="t-mut">│</span>{'\n'}
-              <span className="t-mut">├─────────────────────────────────┼──────────────────────────┼──────────┤</span>{'\n'}
-              <span className="t-mut">│</span> burger-king-finnoo              <span className="t-mut">│</span> Burger King · Finnoo     <span className="t-mut">│</span> 20–30 m  <span className="t-mut">│</span>{'\n'}
-              <span className="t-mut">│</span> burger-king-kamppi              <span className="t-mut">│</span> Burger King · Kamppi     <span className="t-mut">│</span> 15–25 m  <span className="t-mut">│</span>{'\n'}
-              <span className="t-mut">│</span> burger-king-tapiola             <span className="t-mut">│</span> Burger King · Tapiola    <span className="t-mut">│</span> 25–35 m  <span className="t-mut">│</span>{'\n'}
-              <span className="t-mut">└─────────────────────────────────┴──────────────────────────┴──────────┘</span>{'\n'}
+              <span className="t-mut">$</span> <span className="t-fn">wolt</span> top 5{'\n'}
+              <span className="t-hd">Top 5 venues</span>{'\n'}
+              <span className="t-hd">Venue                        Tagline                        Rating  ETA</span>{'\n'}
+              <span className="t-fl">%</span> Noodle Story Kamppi        Fresh homemade noodles         9.6    15–25 m{'\n'}
+              <span className="t-fl">%</span> Putte's Bar &amp; Pizza         Artesaanipizzaa rakkaudella    9.0    20–30 m{'\n'}
+              <span className="t-fl">%</span> Kotipizza Kamppi           Kuuma, kuumempi, Kotipizza     8.4    15–25 m{'\n'}
+              <span className="t-fl">%</span> KFC Kamppi                 It's finger lickin' good       8.2    10–20 m{'\n'}
+              <span className="t-fl">%</span> Friends &amp; Brgrs            Maailman parasta kotimaista    8.6    15–25 m{'\n'}
               {'\n'}
-              <span className="t-mut">$</span> <span className="t-fn">wolt</span> venue menu burger-king-finnoo --include-options <span className="t-fl">--format</span> json \{'\n'}
-              {'  '}| jq -r '.data.items[] | select(.name|test("whopper";"i"))'{'\n'}
+              <span className="t-mut">$</span> <span className="t-fn">wolt</span> feed <span className="t-fl">--summary</span>{'\n'}
+              <span className="t-hd">Section                Kind    Count  Top items</span>{'\n'}
+              Dinner near you        venues  6      Noodle Story · Putte's · Kotipizza · …{'\n'}
+              Popular stores         brands  6      Wolt Market · K-Supermarket · K-Market{'\n'}
+              Fastest delivery       venues  6      KFC Kamppi · McDonald's · Picnic · …{'\n'}
+              Top-rated              venues  6      Café Bar No 9 · Hills Dumplings · …{'\n'}
               {'\n'}
-              <span className="t-mut">$</span> <span className="t-fn">wolt</span> cart add 629f...25f0 6769...cc6f \{'\n'}
-              {'    '}<span className="t-fl">--venue-slug</span> burger-king-finnoo \{'\n'}
-              {'    '}<span className="t-fl">--option</span> "drink=zero" <span className="t-fl">--option</span> "side=fries-l"{'\n'}
-              <span className="t-ok">✓</span> added 1× <span className="t-st">WHOPPER Meal</span>   subtotal <span className="t-st">€11.95</span>{'\n'}
+              <span className="t-mut">$</span> <span className="t-fn">wolt</span> cart add noodle-story-kamppi <span className="t-fl">--query</span> "Teriyaki Udon"{'\n'}
+              <span className="t-ok">✓</span> added 1× <span className="t-st">Teriyaki Udon</span>   subtotal <span className="t-st">€15.80</span>{'\n'}
               {'\n'}
-              <span className="t-mut">$</span> <span className="t-fn">wolt</span> checkout preview <span className="t-fl">--venue-id</span> 629f...25f0{'\n'}
-              {'  '}items                           <span className="t-st">€11.95</span>{'\n'}
+              <span className="t-mut">$</span> <span className="t-fn">wolt</span> checkout{'\n'}
+              {'  '}items                           <span className="t-st">€15.80</span>{'\n'}
               {'  '}delivery                         <span className="t-st">€2.90</span>{'\n'}
-              {'  '}service                          <span className="t-st">€0.99</span>{'\n'}
-              {'  '}──────────────────────────────{'\n'}
-              {'  '}<span className="t-em">total</span>                          <span className="t-em">€15.84</span>{'\n'}
+              {'  '}─────────────────────────{'\n'}
+              {'  '}<span className="t-em">total</span>                          <span className="t-em">€18.70</span>{'\n'}
               <span className="t-mut">$</span> <span className="t-cursor">▋</span>
             </code>
           </pre>
@@ -260,7 +263,7 @@ function Hero() {
 
 function Trust() {
   const cells = [
-    {big: '12+', lbl: 'command groups'},
+    {big: '10', lbl: 'top-level commands'},
     {big: '3', lbl: 'output formats'},
     {big: '1', lbl: 'binary, zero deps'},
     {big: '0', lbl: 'orders placed by CLI'},
@@ -294,9 +297,16 @@ function Features() {
           />
         </svg>
       ),
-      title: <>Discovery &amp; search</>,
-      body: 'List the discovery feed, browse categories, and search venues or items by query. Filter by locale, address, or coordinates.',
-      cmd: 'wolt search venues --query "ramen"',
+      title: <>Discovery &amp; top picks</>,
+      body: (
+        <>
+          <code>wolt feed</code> for the section-grouped home page,{' '}
+          <code>wolt feed --summary</code> for a one-line overview,{' '}
+          <code>wolt top 10</code> for a single ranked list across every venue
+          carousel. Brand sections render as a compact one-liner.
+        </>
+      ),
+      cmd: 'wolt top 10',
     },
     {
       icon: (
@@ -315,11 +325,13 @@ function Features() {
       title: <>Venue details &amp; menus</>,
       body: (
         <>
-          Inspect a venue's hours, menu, categories, and item details. Stream menus
-          with <code>--include-options</code> for the full option matrix.
+          Inspect a venue's hours, menu, categories, and item details. Add{' '}
+          <code>--query</code> for assortment search, <code>--include-options</code>{' '}
+          for the full option matrix. <code>venue hours</code> falls back to the
+          static venue payload when upstream returns 410.
         </>
       ),
-      cmd: 'wolt venue menu <slug> --include-options',
+      cmd: 'wolt venue menu <slug> --query "udon"',
     },
     {
       icon: (
@@ -339,12 +351,13 @@ function Features() {
       title: <>Cart operations</>,
       body: (
         <>
-          <code>show</code>, <code>count</code>, <code>add</code>, <code>remove</code>,{' '}
-          <code>clear</code>. Add items with arbitrarily nested options the same way the
-          app does.
+          <code>cart</code>, <code>count</code>, <code>add</code>,{' '}
+          <code>remove</code>, <code>clear</code>. Add items by item id, by Wolt
+          URL, or by name (<code>--query "Teriyaki Udon"</code>). Option
+          values resolve by case-insensitive name too.
         </>
       ),
-      cmd: 'wolt cart add <venue> <item> --option …',
+      cmd: 'wolt cart add <venue> --query "<item>"',
     },
     {
       icon: (
@@ -362,11 +375,11 @@ function Features() {
       title: 'Checkout preview',
       body: (
         <>
-          Run <code>checkout preview</code> to project totals, fees, and delivery cost
-          from your current cart — without ever placing an order.
+          Run <code>wolt checkout</code> to project totals, fees, and delivery
+          cost from your current cart — without ever placing an order.
         </>
       ),
-      cmd: 'wolt checkout preview --venue-id …',
+      cmd: 'wolt checkout --venue-id <id>',
     },
     {
       icon: (
@@ -381,9 +394,15 @@ function Features() {
           />
         </svg>
       ),
-      title: <>Profile &amp; orders</>,
-      body: 'Auth status, profile, past orders, saved addresses, payments, and favorites — read-only and respectful of your account scope.',
-      cmd: 'wolt profile orders --limit 20',
+      title: <>Account &amp; orders</>,
+      body: (
+        <>
+          Auth status, profile, order history, addresses, payments, and
+          favourites — all paginated, all read-only by default. Expired sessions
+          surface a friendly "<code>wolt login</code>" hint.
+        </>
+      ),
+      cmd: 'wolt account orders --limit 20',
     },
     {
       icon: (
@@ -399,14 +418,17 @@ function Features() {
           <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" strokeWidth="1.6" />
         </svg>
       ),
-      title: 'Token rotation',
+      title: 'Browser-driven login',
       body: (
         <>
-          Auth via <code>--wtoken</code>, refresh with <code>--wrtoken</code>, or cookie
-          pairs. Profiles isolate credentials per environment.
+          <code>wolt login</code> opens managed Chrome at{' '}
+          <code>127.0.0.1:9222</code>, waits for you to sign in to wolt.com, and
+          extracts cookies + tokens. Manual fallback via <code>--wtoken</code> /{' '}
+          <code>--wrtoken</code>. Tokens auto-refresh via the saved refresh
+          token.
         </>
       ),
-      cmd: 'wolt configure --profile-name default …',
+      cmd: 'wolt login',
     },
     {
       icon: (
@@ -498,34 +520,47 @@ function Install() {
       <div className="install__after">
         <div className="install__step">
           <span className="install__num">1</span>
-          <h4>Configure a profile</h4>
-          <p>Save your token and refresh token to a named profile. Cookie auth is supported too.</p>
+          <h4>Log in</h4>
+          <p>
+            Opens managed Chrome at <code>127.0.0.1:9222</code>, waits for you
+            to sign in to wolt.com, and saves the cookies + tokens locally.
+            Manual fallback works too.
+          </p>
           <pre className="snippet">
             <code>
-              <span className="tk-fn">wolt</span> configure <span className="tk-fl">--profile-name</span> default \{'\n'}
-              {'  '}<span className="tk-fl">--wtoken</span> "&lt;token&gt;" <span className="tk-fl">--wrtoken</span> "&lt;refresh&gt;" <span className="tk-fl">--overwrite</span>
+              <span className="tk-fn">wolt</span> login{'\n'}
+              <span className="tk-fn">wolt</span> login <span className="tk-fl">--wtoken</span> "&lt;jwt&gt;" <span className="tk-fl">--wrtoken</span> "&lt;refresh&gt;"
             </code>
           </pre>
         </div>
         <div className="install__step">
           <span className="install__num">2</span>
           <h4>Verify it works</h4>
-          <p>Status checks the loaded profile and validates the token against the API.</p>
+          <p>
+            Status validates the saved session against{' '}
+            <code>/v1/user/me</code>. Expired tokens auto-refresh; if that
+            fails you get a friendly hint to re-run <code>wolt login</code>.
+          </p>
           <pre className="snippet">
             <code>
-              <span className="tk-fn">wolt</span> profile status <span className="tk-fl">--verbose</span>{'\n'}
-              <span className="tk-fn">wolt</span> profile show <span className="tk-fl">--format</span> json
+              <span className="tk-fn">wolt</span> status <span className="tk-fl">--verbose</span>{'\n'}
+              <span className="tk-fn">wolt</span> account <span className="tk-fl">--format</span> json
             </code>
           </pre>
         </div>
         <div className="install__step">
           <span className="install__num">3</span>
-          <h4>Run anything</h4>
-          <p>Pipe into <code>jq</code>, save to disk, or feed another script. Output format is yours.</p>
+          <h4>Discover or drill in</h4>
+          <p>
+            One ranked list with <code>wolt top</code>, a one-line overview with{' '}
+            <code>wolt feed --summary</code>, or pipe straight into{' '}
+            <code>jq</code> for automation.
+          </p>
           <pre className="snippet">
             <code>
-              <span className="tk-fn">wolt</span> search venues <span className="tk-fl">--query</span> "ramen" <span className="tk-fl">--format</span> json \{'\n'}
-              {'  '}| jq -r '.data.items[].slug'
+              <span className="tk-fn">wolt</span> top 10{'\n'}
+              <span className="tk-fn">wolt</span> feed <span className="tk-fl">--summary</span>{'\n'}
+              <span className="tk-fn">wolt</span> venues <span className="tk-fl">--query</span> "ramen" <span className="tk-fl">--format</span> json
             </code>
           </pre>
         </div>
@@ -549,15 +584,17 @@ function Example() {
         <li className="step">
           <header>
             <span className="step__n">01</span>
-            <h3>Find the venue</h3>
+            <h3>Pick a venue</h3>
           </header>
           <p>
-            Search for the venue and copy its <code>slug</code> + <code>venue_id</code>.
+            <code>wolt top</code> ranks venues across every curated feed
+            section. <code>wolt venues --query</code> narrows by keyword. Both
+            print copy-paste-ready slugs.
           </p>
           <pre className="snippet snippet--dark">
             <code>
-              <span className="tk-fn">wolt</span> search venues <span className="tk-fl">--query</span> "burger king" <span className="tk-fl">--limit</span> 10 <span className="tk-fl">--format</span> json \{'\n'}
-              {'  '}| jq -r '.data.items[] | "\\(.slug)\\t\\(.venue_id)\\t\\(.name)"'
+              <span className="tk-fn">wolt</span> top 10{'\n'}
+              <span className="tk-fn">wolt</span> venues <span className="tk-fl">--query</span> "burger king" <span className="tk-fl">--limit</span> 10
             </code>
           </pre>
         </li>
@@ -566,12 +603,13 @@ function Example() {
             <span className="step__n">02</span>
             <h3>Inspect the menu</h3>
           </header>
-          <p>Pull the menu with the option matrix and locate the item you want.</p>
+          <p>
+            Use <code>--query</code> for assortment search or{' '}
+            <code>--include-options</code> for the full option matrix.
+          </p>
           <pre className="snippet snippet--dark">
             <code>
-              <span className="tk-fn">wolt</span> venue menu burger-king-finnoo <span className="tk-fl">--include-options</span> <span className="tk-fl">--format</span> json \{'\n'}
-              {'  '}| jq -r '.data.items[] | select(.name|test("whopper";"i")){'\n'}
-              {'                         '}| "\\(.item_id)\\t\\(.name)\\t\\(.base_price.amount)"'
+              <span className="tk-fn">wolt</span> venue menu burger-king-finnoo <span className="tk-fl">--query</span> "whopper" <span className="tk-fl">--include-options</span>
             </code>
           </pre>
         </li>
@@ -580,30 +618,32 @@ function Example() {
             <span className="step__n">03</span>
             <h3>Read the options</h3>
           </header>
-          <p>Resolve drink, side, and add-on group IDs to value IDs.</p>
+          <p>
+            <code>venue item</code> renders the option groups, their values, and
+            min/max requirements.
+          </p>
           <pre className="snippet snippet--dark">
             <code>
-              <span className="tk-fn">wolt</span> item options burger-king-finnoo &lt;item-id&gt; <span className="tk-fl">--format</span> json \{'\n'}
-              {'  '}| jq -r '.data.option_groups[] | .name as $g | .values[] | "\\($g)\\t\\(.name)"'
+              <span className="tk-fn">wolt</span> venue item burger-king-finnoo &lt;item-id&gt;{'\n'}
+              <span className="tk-fn">wolt</span> venue item "https://wolt.com/.../venue/burger-king-finnoo/itemid-&lt;id&gt;"
             </code>
           </pre>
         </li>
         <li className="step">
           <header>
             <span className="step__n">04</span>
-            <h3>Add to cart with options</h3>
+            <h3>Add to cart by name</h3>
           </header>
           <p>
-            Repeatable <code>--option group=value</code> flags compose the whole order.
+            Repeatable <code>--option Group=Value</code> resolves option values
+            by case-insensitive name — no need to copy 24-char IDs by hand.
           </p>
           <pre className="snippet snippet--dark">
             <code>
-              <span className="tk-fn">wolt</span> cart add 629f1f18480882d6f02c25f0 676939cb70769df4cec6cc6f \{'\n'}
-              {'  '}<span className="tk-fl">--venue-slug</span> burger-king-finnoo \{'\n'}
-              {'  '}<span className="tk-fl">--option</span> "69958f7a0ccf540d98667a70=69958f777cb002552fad3d3d" \{'\n'}
-              {'  '}<span className="tk-fl">--option</span> "6995b941621e894833915306=6995b93d45f708d8b1ad1345" \{'\n'}
-              {'  '}<span className="tk-fl">--option</span> "69958f7a0ccf540d98667a73=69958f777cb002552fad3d51" \{'\n'}
-              {'  '}<span className="tk-fl">--format</span> json
+              <span className="tk-fn">wolt</span> cart add burger-king-finnoo <span className="tk-fl">--query</span> "WHOPPER Meal" \{'\n'}
+              {'  '}<span className="tk-fl">--option</span> "Drink=Coca-Cola Zero" \{'\n'}
+              {'  '}<span className="tk-fl">--option</span> "Side=Fries L" \{'\n'}
+              {'  '}<span className="tk-fl">--count</span> 1
             </code>
           </pre>
         </li>
@@ -615,8 +655,8 @@ function Example() {
           <p>Project items, fees, and totals — nothing is submitted.</p>
           <pre className="snippet snippet--dark">
             <code>
-              <span className="tk-fn">wolt</span> cart show <span className="tk-fl">--details</span> <span className="tk-fl">--venue-id</span> &lt;venue-id&gt; <span className="tk-fl">--format</span> json{'\n'}
-              <span className="tk-fn">wolt</span> checkout preview <span className="tk-fl">--delivery-mode</span> standard <span className="tk-fl">--venue-id</span> &lt;venue-id&gt;
+              <span className="tk-fn">wolt</span> cart <span className="tk-fl">--details</span> <span className="tk-fl">--venue-id</span> &lt;venue-id&gt;{'\n'}
+              <span className="tk-fn">wolt</span> checkout <span className="tk-fl">--delivery-mode</span> standard <span className="tk-fl">--venue-id</span> &lt;venue-id&gt;
             </code>
           </pre>
         </li>
@@ -627,22 +667,22 @@ function Example() {
 
 function Commands() {
   const cards: Array<{name: string; body: ReactNode}> = [
-    {name: 'wolt configure', body: 'Create or update profiles. Set tokens, cookies, default locale, output format.'},
-    {name: 'wolt discovery', body: 'Browse the discovery feed and categories scoped to a location.'},
-    {name: 'wolt search', body: 'Search venues and items by free-text query.'},
-    {name: 'wolt venue', body: 'Details, hours, categories, menus, and per-venue search.'},
-    {name: 'wolt item', body: 'Inspect a single item and its full option matrix.'},
+    {name: 'wolt login / logout / status', body: 'Browser-driven login via managed Chrome. Manual token fallback. Friendly hint when the session expires.'},
+    {name: 'wolt feed', body: 'Section-grouped discovery home page. Add --summary for a one-line-per-section overview.'},
+    {name: 'wolt top', body: 'Flatten the feed into a single top-N ranked table. Default 10. Dedupes by venue.'},
+    {name: 'wolt venues', body: 'Flat list with filters: --query, --sort, --open-now, --wolt-plus, --promotions-only, pagination.'},
+    {name: 'wolt venue', body: 'Details, hours (with static-payload fallback), categories, menu (full / --query / --category), single-item drilldown.'},
     {
       name: 'wolt cart',
       body: (
         <>
-          <code>show</code> · <code>count</code> · <code>add</code> · <code>remove</code> ·{' '}
-          <code>clear</code>.
+          <code>cart</code> · <code>count</code> · <code>add</code> ·{' '}
+          <code>remove</code> · <code>clear</code>. Add by id, URL, or name.
         </>
       ),
     },
-    {name: 'wolt checkout preview', body: 'Project totals and fees from the current cart. No order placement.'},
-    {name: 'wolt profile', body: 'Auth status, profile data, orders, addresses, payments, favorites.'},
+    {name: 'wolt checkout', body: 'Project totals, fees, and delivery cost from the current cart. No order placement.'},
+    {name: 'wolt account', body: 'Profile · orders · addresses · payments · favourites. Read-only by default.'},
   ];
 
   return (
@@ -667,14 +707,14 @@ function Commands() {
         <summary>Global flags reference</summary>
         <div className="flags__grid">
           <div><code>--format</code><span>table · json · yaml</span></div>
-          <div><code>--profile</code><span>switch between configured profiles</span></div>
           <div><code>--address</code><span>temporary location, geocoded</span></div>
           <div><code>--lat / --lon</code><span>coordinate override (paired)</span></div>
           <div><code>--locale</code><span>BCP-47 locale tag</span></div>
           <div><code>--no-color</code><span>disable ANSI colors</span></div>
           <div><code>--verbose</code><span>HTTP trace + diagnostics</span></div>
-          <div><code>--wtoken / --wrtoken</code><span>auth + refresh tokens</span></div>
-          <div><code>--cookie</code><span>repeatable name=value pairs</span></div>
+          <div><code>--limit / --offset / --page</code><span>pagination on list commands</span></div>
+          <div><code>--show-highlights</code><span>force / auto / hide Highlights column</span></div>
+          <div><code>WOLT_BADGES_PLAIN=1</code><span>plain-text badge labels</span></div>
         </div>
       </details>
     </section>
@@ -698,9 +738,10 @@ function FAQ() {
       q: 'Can it place real orders?',
       a: (
         <>
-          No. The CLI exposes <code>checkout preview</code> only, which projects totals
-          and fees. Final order placement still happens in the official Wolt app or
-          website, using the delivery address selected in your account.
+          No. The CLI exposes <code>wolt checkout</code> as a preview only, which
+          projects totals and fees. Final order placement still happens in the
+          official Wolt app or website, using the delivery address selected in
+          your account.
         </>
       ),
     },
@@ -766,8 +807,8 @@ function CTA() {
       <div className="cta__inner">
         <h2>Try it in 30 seconds.</h2>
         <p>
-          One <code>brew install</code>, one <code>wolt configure</code>, and you're
-          piping menus into <code>jq</code>.
+          One <code>brew install</code>, one <code>wolt login</code>, then{' '}
+          <code>wolt top 10</code>. That's the whole flow.
         </p>
         <InlineCmd id="cta-cmd" size="lg" text="brew install mekedron/tap/wolt-cli">
           <span className="tk-fn">brew</span> install mekedron/tap/wolt-cli

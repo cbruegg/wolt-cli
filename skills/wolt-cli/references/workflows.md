@@ -14,7 +14,15 @@ wolt status --format json --verbose
 wolt account --format json
 ```
 
-If status fails with upstream/auth errors, keep `--verbose` and surface exact error code/message.
+If any auth-gated command fails because the session expired, the CLI now exits with `WOLT_AUTH_REQUIRED` and the message "Your Wolt session expired or is missing. Run \"wolt login\" to refresh." — direct the user to re-run `wolt login`.
+
+## 1a) Quickest "What Should I Eat?" Loop
+
+```bash
+wolt top 10                         # single ranked table, no jq
+wolt feed --summary                 # one line per section overview
+wolt feed --query "burger"          # filter the feed (matches brand carousels too)
+```
 
 ## 2) Find Venue, Inspect Item, Add to Cart, Preview Checkout
 

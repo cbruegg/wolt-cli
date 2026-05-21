@@ -197,10 +197,32 @@ like `woltmarket-popular-brands:helsinki`). The table renders these as
 a single one-line summary; `--query` matches against `brands[].name`
 as well as venue rows.
 
+### `wolt top` — TopVenues
+
+```
+venues[]: {
+  venue_id, slug, name,
+  tagline, top_offer,
+  rating, delivery_estimate, delivery_fee,
+  price_range, price_range_scale,
+  promotions[], badges[], menu_highlights[], wolt_plus
+}
+
+# Pagination
+count, offset, limit, total_pages, next_offset, page
+```
+
+Same row shape as `wolt venues`. The flattened slice is bounded by the
+combined `feed` payload and the `--limit` (default 10) before
+deduplication by `venue_id`. Brand carousels are excluded.
+
 ### `wolt venues categories` — CategoryList
 
 ```
 categories[]: { id, name, slug }
+
+# Pagination
+count, total, offset, limit, total_pages, next_offset, page
 ```
 
 ### `wolt venue <slug>` — VenueDetail
@@ -219,6 +241,9 @@ the static venue payload and adds a warning.
 venue_id: string
 loading_strategy: string
 categories[]: { id, slug, name, parent_slug, level, leaf, item_refs_count }
+
+# Pagination
+count, total, offset, limit, total_pages, next_offset, page
 ```
 
 ### `wolt venue menu <slug>` (without `--query`) — VenueMenu
