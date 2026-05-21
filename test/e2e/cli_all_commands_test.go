@@ -1572,6 +1572,103 @@ func TestVenueHoursFallbackWhenRestaurantEndpointGone(t *testing.T) {
 	}
 }
 
+func TestVenueHoursDerivesWindowsFromStaticPayload(t *testing.T) {
+	venueItem := &domain.Item{
+		Title: "Noodle Story",
+		Link:  domain.Link{Target: "venue-1"},
+		Venue: &domain.Venue{ID: "venue-1", Slug: "noodle-story"},
+	}
+	staticPayload := map[string]any{
+		"venue": map[string]any{"id": "venue-1", "slug": "noodle-story"},
+		"venue_raw": map[string]any{
+			"opening_times": map[string]any{
+				"monday": []any{
+					map[string]any{"type": "open", "value": float64(39600)},  // 11:00
+					map[string]any{"type": "close", "value": float64(74700)}, // 20:45
+				},
+				"saturday": []any{
+					map[string]any{"type": "open", "value": float64(41400)},  // 11:30
+					map[string]any{"type": "close", "value": float64(74700)}, // 20:45
+				},
+			},
+		},
+	}
+	staticCalls := 0
+	deps := cli.Dependencies{
+		Wolt: &mockWolt{
+			itemBySlugFunc: func(context.Context, domain.Location, string) (*domain.Item, error) {
+				return venueItem, nil
+			},
+			venuePageStaticFunc: func(context.Context, string) (map[string]any, error) {
+				staticCalls++
+				return staticPayload, nil
+			},
+			restaurantByIDFunc: func(context.Context, string) (*domain.Restaurant, error) {
+				return nil, &woltgateway.UpstreamRequestError{StatusCode: 410}
+			},
+		},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 0, Lon: 0}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+
+	exitCode, out := runCLIWithDeps(t, deps, "venue", "hours", "noodle-story", "--format", "json")
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
+	}
+	if staticCalls == 0 {
+		t.Fatal("expected on-demand static payload fetch when restaurant endpoint returns 410")
+	}
+	payload := mustJSON(t, out)
+	data := asMapPayload(t, payload["data"])
+	windows := asSlicePayload(t, data["opening_windows"])
+	if len(windows) != 7 {
+		t.Fatalf("expected 7 weekday windows, got %d", len(windows))
+	}
+	monday := asMapPayload(t, windows[0])
+	if monday["day"] != "monday" || monday["open"] != "11:00" || monday["close"] != "20:45" {
+		t.Fatalf("expected monday 11:00-20:45, got %v", monday)
+	}
+	saturday := asMapPayload(t, windows[5])
+	if saturday["open"] != "11:30" {
+		t.Fatalf("expected saturday open 11:30, got %v", saturday)
+	}
+	tuesday := asMapPayload(t, windows[1])
+	if tuesday["open"] != "-" || tuesday["close"] != "-" {
+		t.Fatalf("expected tuesday to be unmodelled (-/-), got %v", tuesday)
+	}
+}
+
+func TestExpiredSessionRendersFriendlyAuthHint(t *testing.T) {
+	deps := cli.Dependencies{
+		Wolt: &mockWolt{
+			userMeFunc: func(context.Context, woltgateway.AuthContext) (map[string]any, error) {
+				return nil, &woltgateway.UpstreamRequestError{StatusCode: 401}
+			},
+		},
+		Profiles: &mockProfiles{profile: domain.Profile{
+			Name:      "default",
+			IsDefault: true,
+			Location:  domain.Location{Lat: 0, Lon: 0},
+			WToken:    "stale-token",
+		}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+	exitCode, out := runCLIWithDeps(t, deps, "account", "--format", "json")
+	if exitCode == 0 {
+		t.Fatalf("expected non-zero exit on 401, got %d\noutput:\n%s", exitCode, out)
+	}
+	if !strings.Contains(out, `session expired`) || !strings.Contains(out, `wolt login`) {
+		t.Fatalf("expected friendly upstream-401 hint, got:\n%s", out)
+	}
+	if !strings.Contains(out, "WOLT_AUTH_REQUIRED") {
+		t.Fatalf("expected WOLT_AUTH_REQUIRED error code, got:\n%s", out)
+	}
+}
+
 func TestItemShowFailsWhenItemMissingInVenue(t *testing.T) {
 	staticPayload := map[string]any{
 		"venue": map[string]any{

@@ -556,6 +556,11 @@ func newVenueHoursCommand(deps Dependencies) *cobra.Command {
 			restaurant, err := deps.Wolt.RestaurantByID(cmd.Context(), venueID)
 			if err != nil {
 				if isRecoverableRestaurantError(err) {
+					if len(staticPayload) == 0 {
+						if fetched, fetchErr := cachedVenuePageStatic(cmd.Context(), deps, slug); fetchErr == nil {
+							staticPayload = fetched
+						}
+					}
 					data, warnings := buildVenueHoursFallback(venueID, timezone, staticPayload)
 					warnings = append(warnings, fallbackWarnings...)
 					if format == output.FormatTable {
@@ -788,21 +793,80 @@ func buildVenueDetailFallback(
 	return data, warnings
 }
 
-func buildVenueHoursFallback(venueID string, timezone string, _ map[string]any) (map[string]any, []string) {
+func buildVenueHoursFallback(venueID string, timezone string, staticPayload map[string]any) (map[string]any, []string) {
 	resolvedTimezone := strings.TrimSpace(timezone)
 	if resolvedTimezone == "" {
 		resolvedTimezone = "UTC"
 	}
+	windows := openingWindowsFromStaticPayload(staticPayload)
 	data := map[string]any{
 		"venue_id":         venueID,
 		"timezone":         resolvedTimezone,
-		"opening_windows":  []any{},
+		"opening_windows":  windows,
 		"delivery_windows": []any{},
 	}
-	warnings := []string{
-		"restaurant detail endpoint unavailable; opening hours are unavailable in fallback mode",
+	warnings := []string{}
+	if len(windows) == 0 {
+		warnings = append(warnings, "restaurant detail endpoint unavailable; opening hours are unavailable in fallback mode")
+	} else {
+		warnings = append(warnings, "restaurant detail endpoint unavailable; opening hours derived from static venue payload")
 	}
 	return data, warnings
+}
+
+// openingWindowsFromStaticPayload extracts opening hours from the
+// static venue payload (venue_raw.opening_times). The /v3/venues
+// endpoint that previously served structured hours now returns 410,
+// so this lifts the same data from the always-reachable static page.
+// Each weekday entry is a list of { type: "open"|"close", value: int }
+// where value is seconds since midnight.
+func openingWindowsFromStaticPayload(payload map[string]any) []any {
+	weekdayOrder := []string{"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
+
+	openingTimes := asMap(asMap(payload["venue_raw"])["opening_times"])
+	if openingTimes == nil {
+		openingTimes = asMap(asMap(payload["venue"])["opening_times"])
+	}
+	if openingTimes == nil {
+		return []any{}
+	}
+
+	windows := make([]any, 0, len(weekdayOrder))
+	hasAny := false
+	for _, weekday := range weekdayOrder {
+		entries := asSlice(openingTimes[weekday])
+		openValue := "-"
+		closeValue := "-"
+		for _, raw := range entries {
+			entry := asMap(raw)
+			if entry == nil {
+				continue
+			}
+			secs, ok := asFloat(entry["value"])
+			if !ok {
+				continue
+			}
+			hhmm := fmt.Sprintf("%02d:%02d", int(secs)/3600, (int(secs)%3600)/60)
+			switch strings.ToLower(asString(entry["type"])) {
+			case "open":
+				openValue = hhmm
+			case "close":
+				closeValue = hhmm
+			}
+		}
+		if openValue != "-" || closeValue != "-" {
+			hasAny = true
+		}
+		windows = append(windows, map[string]any{
+			"day":   weekday,
+			"open":  openValue,
+			"close": closeValue,
+		})
+	}
+	if !hasAny {
+		return []any{}
+	}
+	return windows
 }
 
 func itemTitle(item *domain.Item) string {

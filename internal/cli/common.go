@@ -280,11 +280,18 @@ func emitUpstreamError(
 	}
 
 	message := woltgateway.ErrUpstream.Error() + " (use --verbose for details)"
+	code := "WOLT_UPSTREAM_ERROR"
 	var upstreamErr *woltgateway.UpstreamRequestError
 	if errors.As(err, &upstreamErr) && upstreamErr.StatusCode > 0 {
-		message = fmt.Sprintf("%s (status %d, use --verbose for details)", woltgateway.ErrUpstream.Error(), upstreamErr.StatusCode)
+		switch upstreamErr.StatusCode {
+		case 401, 403:
+			message = "Your Wolt session expired or is missing. Run \"wolt login\" to refresh."
+			code = "WOLT_AUTH_REQUIRED"
+		default:
+			message = fmt.Sprintf("%s (status %d, use --verbose for details)", woltgateway.ErrUpstream.Error(), upstreamErr.StatusCode)
+		}
 	}
-	return emitError(cmd, format, profile, locale, outputPath, "WOLT_UPSTREAM_ERROR", message)
+	return emitError(cmd, format, profile, locale, outputPath, code, message)
 }
 
 func splitCSV(value string) map[string]struct{} {

@@ -16,9 +16,12 @@ const (
 	VenueSortDeliveryTime  VenueSort = "delivery_time"
 )
 
-// ParseVenueSort parses venue sort value.
+// ParseVenueSort parses venue sort value. Accepts hyphenated aliases
+// ("delivery-time", "delivery-price") alongside the canonical
+// underscored forms.
 func ParseVenueSort(value string) (VenueSort, error) {
-	v := VenueSort(strings.ToLower(strings.TrimSpace(value)))
+	normalized := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(value)), "-", "_")
+	v := VenueSort(normalized)
 	if v == "" {
 		return VenueSortRecommended, nil
 	}

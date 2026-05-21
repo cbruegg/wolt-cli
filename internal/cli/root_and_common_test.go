@@ -110,8 +110,25 @@ func TestEmitUpstreamErrorFormatting(t *testing.T) {
 	if !errors.As(err, &exitErr) || exitErr.code != 1 {
 		t.Fatalf("expected controlled exit error, got %v", err)
 	}
-	if got := buf.String(); !strings.Contains(got, "status 401") {
-		t.Fatalf("expected non-verbose status hint, got %q", got)
+	if got := buf.String(); !strings.Contains(got, "session expired") || !strings.Contains(got, "wolt login") {
+		t.Fatalf("expected friendly auth hint, got %q", got)
+	}
+
+	buf.Reset()
+	err = emitUpstreamError(
+		cmd,
+		output.FormatTable,
+		"default",
+		"en-FI",
+		"",
+		false,
+		&woltgateway.UpstreamRequestError{StatusCode: 500},
+	)
+	if !errors.As(err, &exitErr) || exitErr.code != 1 {
+		t.Fatalf("expected controlled exit error, got %v", err)
+	}
+	if got := buf.String(); !strings.Contains(got, "status 500") {
+		t.Fatalf("expected status 500 hint for non-auth errors, got %q", got)
 	}
 }
 

@@ -585,6 +585,31 @@ func intPtr(v int) *int {
 	return &v
 }
 
+func TestParseVenueSortAcceptsHyphenatedAliases(t *testing.T) {
+	cases := []struct {
+		in   string
+		want observability.VenueSort
+	}{
+		{"recommended", observability.VenueSortRecommended},
+		{"delivery_time", observability.VenueSortDeliveryTime},
+		{"delivery-time", observability.VenueSortDeliveryTime},
+		{"DELIVERY-PRICE", observability.VenueSortDeliveryPrice},
+		{"  delivery-time  ", observability.VenueSortDeliveryTime},
+	}
+	for _, c := range cases {
+		got, err := observability.ParseVenueSort(c.in)
+		if err != nil {
+			t.Fatalf("ParseVenueSort(%q) errored: %v", c.in, err)
+		}
+		if got != c.want {
+			t.Fatalf("ParseVenueSort(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+	if _, err := observability.ParseVenueSort("nonsense"); err == nil {
+		t.Fatal("expected ParseVenueSort to reject unknown sort key")
+	}
+}
+
 func TestBuildDiscoveryFeedSurfacesBadgesAndMenuHighlights(t *testing.T) {
 	section := domain.Section{
 		Name:  "popular",
