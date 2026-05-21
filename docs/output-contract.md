@@ -44,6 +44,8 @@ Stable error codes:
 | `WOLT_AUTH_REQUIRED` | The endpoint requires a logged-in session. |
 | `WOLT_INVALID_ARGUMENT` | Flag combination is invalid (e.g. `--lat` without `--lon`). |
 | `WOLT_UPSTREAM_ERROR` | Upstream returned a non-success status. `--verbose` adds the URL and status code to the message. |
+| `WOLT_STATS_BUNDLE_UNAVAILABLE` | `wolt stats` could not fetch a usable dashboard bundle (GitHub unreachable, missing release asset, or checksum mismatch) and no cached bundle is on disk. |
+| `WOLT_STATS_ENV_ERROR` | `wolt stats` environment issue: port busy, stats dir not writable, missing user email, sync failure. |
 
 ## Conventions
 
@@ -332,3 +334,37 @@ tip_config
 ```
 
 Preview-only. The CLI never calls the order placement endpoint.
+
+### `wolt stats` — StatsLaunch
+
+The envelope is emitted on startup, **before** the command blocks on the
+HTTP server. JSON / YAML consumers should expect a single envelope followed
+by the process continuing to run; the server stays up until SIGINT (exit
+code `130`).
+
+```
+stats_dir: string                        absolute path of the install dir
+bundle: {
+  version: string                         tag name, e.g. "v0.1.0"
+  source: "github-release" | ""           where the bundle came from
+  downloaded: bool                        true if this run pulled it fresh
+  active_path: string                     absolute path to the extracted bundle
+}
+db_path: string                          absolute path to wolt-history.sqlite
+email: string                            (omitted when --no-sync)
+sync: {                                  (omitted when --no-sync)
+  performed: bool
+  mode: "full" | "incremental"
+  pages_fetched, orders_scanned, details_fetched: int
+  inserted_orders, updated_orders: int
+  catalog_count, detail_count: int
+  reached_history_end: bool
+  duration_ms: int64
+  stop_reason: "known_purchase" | "checkpoint_reached"   (incremental only, omitted on full scan)
+}
+server: {
+  url: "http://127.0.0.1:5173"
+  port: int
+  pid: int
+}
+```

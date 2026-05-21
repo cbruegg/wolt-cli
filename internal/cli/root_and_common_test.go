@@ -395,3 +395,60 @@ func buildExpiringJWT(exp int64) string {
 	payload := base64.RawURLEncoding.EncodeToString([]byte(payloadJSON))
 	return header + "." + payload + ".sig"
 }
+
+func TestOpenBrowserDispatchesPerPlatform(t *testing.T) {
+	var capturedName string
+	var capturedArgs []string
+	prev := browserOpenCommand
+	t.Cleanup(func() { browserOpenCommand = prev })
+
+	browserOpenCommand = func(target string) (string, []string, error) {
+		return "echo", []string{"--launched", target}, nil
+	}
+
+	if err := openBrowser(context.Background(), "https://example.test"); err != nil {
+		t.Fatalf("openBrowser returned error: %v", err)
+	}
+
+	// Re-route through a recording stub so we can assert the wire-format too.
+	browserOpenCommand = func(target string) (string, []string, error) {
+		capturedName = "stub"
+		capturedArgs = []string{target}
+		return "echo", []string{target}, nil
+	}
+	if err := openBrowser(context.Background(), "https://example.test"); err != nil {
+		t.Fatalf("openBrowser stub returned error: %v", err)
+	}
+	if capturedName != "stub" || len(capturedArgs) != 1 || capturedArgs[0] != "https://example.test" {
+		t.Fatalf("unexpected stub invocation: name=%q args=%v", capturedName, capturedArgs)
+	}
+}
+
+func TestOpenBrowserRejectsEmptyURL(t *testing.T) {
+	if err := openBrowser(context.Background(), "   "); err == nil {
+		t.Fatal("expected error for empty URL")
+	}
+}
+
+func TestDefaultBrowserOpenCommandShape(t *testing.T) {
+	name, args, err := defaultBrowserOpenCommand("https://example.test")
+	if err != nil {
+		t.Fatalf("defaultBrowserOpenCommand returned error: %v", err)
+	}
+	if name == "" {
+		t.Fatal("expected a non-empty command name")
+	}
+	if len(args) == 0 {
+		t.Fatal("expected at least one arg containing the URL")
+	}
+	found := false
+	for _, arg := range args {
+		if strings.Contains(arg, "example.test") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("URL did not appear in args: %v", args)
+	}
+}

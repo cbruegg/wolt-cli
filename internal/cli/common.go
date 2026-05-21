@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -311,6 +313,36 @@ func splitCSV(value string) map[string]struct{} {
 
 func requiredArg(name string) string {
 	return fmt.Sprintf("%s is required", name)
+}
+
+// browserOpenCommand is the package-level hook that resolves the platform-specific
+// argv used to open a URL. It exists so tests can swap in a recording stub.
+var browserOpenCommand = defaultBrowserOpenCommand
+
+// openBrowser launches the user's default browser at the given URL.
+// Returns an error if the URL is empty, the OS is unsupported, or the
+// underlying launcher exits non-zero.
+func openBrowser(ctx context.Context, target string) error {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return fmt.Errorf("openBrowser: empty URL")
+	}
+	name, args, err := browserOpenCommand(target)
+	if err != nil {
+		return err
+	}
+	return exec.CommandContext(ctx, name, args...).Run()
+}
+
+func defaultBrowserOpenCommand(target string) (string, []string, error) {
+	switch runtime.GOOS {
+	case "darwin":
+		return "open", []string{target}, nil
+	case "windows":
+		return "rundll32", []string{"url.dll,FileProtocolHandler", target}, nil
+	default:
+		return "xdg-open", []string{target}, nil
+	}
 }
 
 func normalizeCookieInputs(raw []string) []string {

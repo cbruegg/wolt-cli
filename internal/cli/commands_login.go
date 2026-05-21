@@ -294,7 +294,7 @@ func openChromeTarget(ctx context.Context, browserURL string, loginURL string) e
 			return nil
 		}
 	}
-	return exec.CommandContext(ctx, "open", loginURL).Run()
+	return openBrowser(ctx, loginURL)
 }
 
 type chromePage struct {

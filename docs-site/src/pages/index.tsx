@@ -264,7 +264,7 @@ function Hero() {
 
 function Trust() {
   const cells = [
-    {big: '10', lbl: 'top-level commands'},
+    {big: '11', lbl: 'top-level commands'},
     {big: '3', lbl: 'output formats'},
     {big: '1', lbl: 'binary, zero deps'},
     {big: '0', lbl: 'orders placed by CLI'},
@@ -404,6 +404,33 @@ function Features() {
         </>
       ),
       cmd: 'wolt account orders --limit 20',
+    },
+    {
+      icon: (
+        <svg viewBox="0 0 24 24">
+          <path
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M4 19V9m6 10V5m6 14v-7m-13 7h17"
+          />
+        </svg>
+      ),
+      title: <>Local stats dashboard</>,
+      body: (
+        <>
+          <code>wolt stats</code> downloads a pre-built dashboard bundle from{' '}
+          <a href="https://github.com/mekedron/wolt-stats" target="_blank" rel="noreferrer">
+            wolt-stats
+          </a>{' '}
+          releases, syncs your order history into a local SQLite file, serves
+          everything at <code>127.0.0.1:5173</code>, and opens the browser. No
+          Node.js needed — sync is pure Go, dashboard is static HTML.
+        </>
+      ),
+      cmd: 'wolt stats',
     },
     {
       icon: (
@@ -721,6 +748,16 @@ function Commands() {
     },
     {name: 'wolt checkout', body: 'Project totals, fees, and delivery cost from the current cart. No order placement.'},
     {name: 'wolt account', body: 'Profile · orders · addresses · payments · favourites. Read-only by default.'},
+    {
+      name: 'wolt stats',
+      body: (
+        <>
+          Download the <code>wolt-stats</code> dashboard bundle, sync history
+          into local SQLite (pure Go, no Node), serve on{' '}
+          <code>127.0.0.1:5173</code>, and open the browser.
+        </>
+      ),
+    },
   ];
 
   return (

@@ -15,6 +15,7 @@ It is not affiliated with Wolt. Use it at your own responsibility.
 - cart commands (`cart`, `cart count`, `cart add`, `cart remove`, `cart clear`)
 - checkout projection (`checkout`, no order placement)
 - single-account commands (`login`, `logout`, `status`, `account`)
+- local stats dashboard (`wolt stats`) — fetches a pre-built bundle, syncs your order history into SQLite, serves the dashboard at `http://127.0.0.1:5173`, and opens the browser. No Node.js required at runtime.
 - discovery enrichments: `menu_highlights[]` from `venue_preview_items`, badge glyphs in the venue cell from `badges_v2`, brand carousels ("Popular stores", "Restaurant categories") as one-line summaries
 - token rotation using the refresh token (`--wrtoken`)
 
@@ -173,6 +174,38 @@ wolt account order <purchase-id>
 wolt account payments
 wolt account favorites --limit 20
 ```
+
+## Local Stats Dashboard
+
+`wolt stats` is the one-line shortcut for exploring your order history in a
+visual dashboard. It downloads a pre-built bundle of
+[`wolt-stats`](https://github.com/mekedron/wolt-stats) from GitHub Releases,
+syncs your orders into a local SQLite file, starts a small embedded HTTP
+server, and opens your browser. There is no Node.js install step — the
+dashboard is shipped as a static HTML/JS/WASM bundle, and the sync runs
+inside `wolt-cli` itself.
+
+```bash
+# All-in-one. First run downloads the bundle (~1.5 MB) and the full order
+# history; subsequent runs are incremental.
+wolt stats
+
+# Force a full re-sync (use after a long absence or to repair data).
+wolt stats --resync
+
+# Skip the sync (open the dashboard against the database that's already on disk).
+wolt stats --no-sync
+
+# Just print the dashboard URL — useful in scripts and CI.
+wolt stats --no-open --format json
+
+# Pin to a specific dashboard release.
+wolt stats --bundle-version v0.1.0
+```
+
+Everything lives under `~/.wolt/stats/` (override with `--stats-dir` or
+`$WOLT_STATS_DIR`). The SQLite file is at
+`~/.wolt/stats/db/wolt-history.sqlite`. The server binds to `127.0.0.1` only.
 
 ## Rendering Notes
 

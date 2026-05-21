@@ -76,6 +76,7 @@ func NewRootCommand(deps Dependencies) *cobra.Command {
 	root.AddCommand(newSingleVenueCommand(deps))
 	root.AddCommand(newCartCommand(deps))
 	root.AddCommand(newCheckoutCommand(deps))
+	root.AddCommand(newStatsCommand(deps))
 
 	return root
 }
@@ -123,6 +124,7 @@ func renderRootHelp(out io.Writer, root *cobra.Command) {
 	_, _ = fmt.Fprintln(out, "  wolt venue menu <venue> --query ramen")
 	_, _ = fmt.Fprintln(out, "  wolt cart add <venue> <item-id>")
 	_, _ = fmt.Fprintln(out, "  wolt checkout")
+	_, _ = fmt.Fprintln(out, "  wolt stats")
 	_, _ = fmt.Fprintln(out)
 	_, _ = fmt.Fprintln(out, "Use \"wolt help <command>\" for detailed command help.")
 }

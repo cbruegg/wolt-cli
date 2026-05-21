@@ -1,0 +1,422 @@
+package statssync
+
+import (
+	"context"
+	"database/sql"
+	"path/filepath"
+	"sync"
+	"testing"
+	"time"
+
+	woltgateway "github.com/mekedron/wolt-cli/internal/gateway/wolt"
+	_ "modernc.org/sqlite"
+)
+
+func TestSyncCreatesSchemaAndInsertsOrders(t *testing.T) {
+	client := newFakeClient(twoOrderCorpus())
+	dbPath := filepath.Join(t.TempDir(), "wolt.sqlite")
+
+	res, err := Sync(context.Background(), client, Options{
+		DBPath:    dbPath,
+		UserEmail: "user@example.com",
+		PageSize:  50,
+		RateLimit: time.Millisecond, // keep tests fast
+		Now:       fixedClock(),
+	})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+
+	if res.OrdersScanned != 2 {
+		t.Fatalf("expected 2 orders scanned, got %d", res.OrdersScanned)
+	}
+	if res.DetailsFetched != 2 {
+		t.Fatalf("expected 2 details fetched, got %d", res.DetailsFetched)
+	}
+	if res.InsertedOrders != 2 {
+		t.Fatalf("expected 2 inserted, got %d", res.InsertedOrders)
+	}
+	if res.UpdatedOrders != 0 {
+		t.Fatalf("expected 0 updated on cold start, got %d", res.UpdatedOrders)
+	}
+	if res.Mode != "full" {
+		t.Fatalf("expected mode=full on cold start, got %q", res.Mode)
+	}
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open verify db: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	// Schema-level invariants.
+	for _, table := range []string{"users", "sync_state", "sync_runs", "order_catalog", "orders", "order_items", "order_item_option_values", "order_payments"} {
+		var count int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&count); err != nil {
+			t.Fatalf("schema lookup %s: %v", table, err)
+		}
+		if count != 1 {
+			t.Fatalf("expected table %s to exist", table)
+		}
+	}
+
+	// User row exists and is keyed by slug of email.
+	var (
+		userID    string
+		userLabel string
+	)
+	if err := db.QueryRow(`SELECT id, label FROM users`).Scan(&userID, &userLabel); err != nil {
+		t.Fatalf("read user: %v", err)
+	}
+	if userID != "user-example-com" {
+		t.Fatalf("expected slugged user id, got %q", userID)
+	}
+	if userLabel != "user" {
+		t.Fatalf("expected user label 'user', got %q", userLabel)
+	}
+
+	// orders rows
+	var ordersCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM orders WHERE user_id=?`, userID).Scan(&ordersCount); err != nil {
+		t.Fatalf("count orders: %v", err)
+	}
+	if ordersCount != 2 {
+		t.Fatalf("expected 2 orders, got %d", ordersCount)
+	}
+
+	// items + payments
+	var itemsCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM order_items WHERE user_id=?`, userID).Scan(&itemsCount); err != nil {
+		t.Fatalf("count items: %v", err)
+	}
+	if itemsCount != 3 {
+		t.Fatalf("expected 3 item rows (1+2), got %d", itemsCount)
+	}
+
+	// derived fields: order_local_date for the second order
+	var date string
+	if err := db.QueryRow(`SELECT order_local_date FROM orders WHERE purchase_id='p2'`).Scan(&date); err != nil {
+		t.Fatalf("read date p2: %v", err)
+	}
+	if date != "2026-05-21" {
+		t.Fatalf("expected date 2026-05-21, got %q", date)
+	}
+
+	// sync_runs has exactly one row capturing this run
+	var runs int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sync_runs`).Scan(&runs); err != nil {
+		t.Fatalf("count sync_runs: %v", err)
+	}
+	if runs != 1 {
+		t.Fatalf("expected 1 sync_runs row, got %d", runs)
+	}
+}
+
+func TestSyncIncrementalSkipsKnownOrders(t *testing.T) {
+	client := newFakeClient(twoOrderCorpus())
+	dbPath := filepath.Join(t.TempDir(), "wolt.sqlite")
+
+	if _, err := Sync(context.Background(), client, Options{
+		DBPath:    dbPath,
+		UserEmail: "user@example.com",
+		PageSize:  50,
+		RateLimit: time.Millisecond,
+		Now:       fixedClock(),
+	}); err != nil {
+		t.Fatalf("first Sync: %v", err)
+	}
+
+	client.resetCounts()
+	res, err := Sync(context.Background(), client, Options{
+		DBPath:    dbPath,
+		UserEmail: "user@example.com",
+		PageSize:  50,
+		RateLimit: time.Millisecond,
+		Now:       fixedClock(),
+	})
+	if err != nil {
+		t.Fatalf("incremental Sync: %v", err)
+	}
+	if res.Mode != "incremental" {
+		t.Fatalf("expected mode=incremental, got %q", res.Mode)
+	}
+	if res.DetailsFetched != 0 {
+		t.Fatalf("expected 0 details on warm rerun, got %d", res.DetailsFetched)
+	}
+	// One page fetched so we can detect the known purchase; no further calls.
+	if client.listCalls != 1 {
+		t.Fatalf("expected 1 list call on warm rerun, got %d", client.listCalls)
+	}
+	if client.purchaseCalls != 0 {
+		t.Fatalf("expected 0 purchase calls on warm rerun, got %d", client.purchaseCalls)
+	}
+	if res.StopReason != "known_purchase" {
+		t.Fatalf("expected stop reason known_purchase, got %q", res.StopReason)
+	}
+}
+
+func TestSyncForceFullRefetchesDetails(t *testing.T) {
+	client := newFakeClient(twoOrderCorpus())
+	dbPath := filepath.Join(t.TempDir(), "wolt.sqlite")
+
+	if _, err := Sync(context.Background(), client, Options{
+		DBPath:    dbPath,
+		UserEmail: "user@example.com",
+		PageSize:  50,
+		RateLimit: time.Millisecond,
+		Now:       fixedClock(),
+	}); err != nil {
+		t.Fatalf("first Sync: %v", err)
+	}
+
+	client.resetCounts()
+	res, err := Sync(context.Background(), client, Options{
+		DBPath:    dbPath,
+		UserEmail: "user@example.com",
+		PageSize:  50,
+		ForceFull: true,
+		RateLimit: time.Millisecond,
+		Now:       fixedClock(),
+	})
+	if err != nil {
+		t.Fatalf("force-full Sync: %v", err)
+	}
+	if res.Mode != "full" {
+		t.Fatalf("expected mode=full, got %q", res.Mode)
+	}
+	if res.DetailsFetched != 2 {
+		t.Fatalf("expected 2 details refetched, got %d", res.DetailsFetched)
+	}
+	if res.UpdatedOrders != 2 {
+		t.Fatalf("expected 2 updates on force-full rerun, got %d", res.UpdatedOrders)
+	}
+}
+
+func TestExtractMinorHandlesShapes(t *testing.T) {
+	cases := []struct {
+		name string
+		in   any
+		want int
+	}{
+		{"raw int", 1234, 1234},
+		{"raw float", 12.0, 12},
+		{"map amount int", map[string]any{"amount": 999.0}, 999},
+		{"nested map", map[string]any{"amount": map[string]any{"amount": 42.0}}, 42},
+		{"unrelated map", map[string]any{"label": "x"}, 0},
+		{"nil", nil, 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := extractMinor(c.in); got != c.want {
+				t.Fatalf("extractMinor(%v): want %d, got %d", c.in, c.want, got)
+			}
+		})
+	}
+}
+
+func TestSlugifyMatchesNode(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"user@example.com", "user-example-com"},
+		{"  Mixed.Case+Tag@DOMAIN.io ", "mixed-case-tag-domain-io"},
+		{"unicode-örjan@x.io", "unicode-rjan-x-io"},
+	}
+	for _, c := range cases {
+		t.Run(c.in, func(t *testing.T) {
+			if got := slugify(c.in); got != c.want {
+				t.Fatalf("slugify(%q): want %q, got %q", c.in, c.want, got)
+			}
+		})
+	}
+}
+
+func TestParseLocalDateTimeRoundTrip(t *testing.T) {
+	got := parseLocalDateTime("21/05/2026, 14:30")
+	if !got.Valid {
+		t.Fatal("expected valid result")
+	}
+	if got.Date != "2026-05-21" {
+		t.Fatalf("Date: %q", got.Date)
+	}
+	if got.Month != "2026-05" {
+		t.Fatalf("Month: %q", got.Month)
+	}
+	if got.Datetime != "2026-05-21T14:30:00" {
+		t.Fatalf("Datetime: %q", got.Datetime)
+	}
+	if got.Hour != 14 {
+		t.Fatalf("Hour: %d", got.Hour)
+	}
+	// 2026-05-21 is a Thursday → weekday 4
+	if got.Weekday != 4 {
+		t.Fatalf("Weekday: %d", got.Weekday)
+	}
+}
+
+func TestParseLocalDateTimeRejectsGarbage(t *testing.T) {
+	bad := parseLocalDateTime("yesterday")
+	if bad.Valid {
+		t.Fatal("expected invalid for garbage input")
+	}
+}
+
+func TestCatalogStopDecisionDetectsKnownPurchase(t *testing.T) {
+	known := map[string]struct{}{"p1": {}}
+	res := catalogStopDecision([]any{
+		map[string]any{"purchase_id": "p9", "payment_time_ts": 200},
+		map[string]any{"purchase_id": "p1", "payment_time_ts": 100},
+	}, known, 50)
+	if res != "known_purchase" {
+		t.Fatalf("expected known_purchase, got %q", res)
+	}
+}
+
+func TestCatalogStopDecisionDetectsCheckpoint(t *testing.T) {
+	known := map[string]struct{}{"p1": {}}
+	res := catalogStopDecision([]any{
+		map[string]any{"purchase_id": "p9", "payment_time_ts": 30},
+	}, known, 50)
+	if res != "checkpoint_reached" {
+		t.Fatalf("expected checkpoint_reached, got %q", res)
+	}
+}
+
+// ----- test fixtures -----
+
+func twoOrderCorpus() []fakePage {
+	return []fakePage{
+		{
+			Orders: []map[string]any{
+				{
+					"purchase_id":     "p1",
+					"payment_time_ts": 1700000000,
+					"currency":        "EUR",
+					"status":          "delivered",
+					"received_at":     "2026-05-20T10:00:00Z",
+					"items_summary":   "Pizza Margherita, Coke",
+					"venue_name":      "Pizzeria",
+				},
+				{
+					"purchase_id":     "p2",
+					"payment_time_ts": 1700100000,
+					"currency":        "EUR",
+					"status":          "delivered",
+					"received_at":     "2026-05-21T14:30:00Z",
+					"items_summary":   "Ramen",
+					"venue_name":      "Ramen House",
+				},
+			},
+		},
+	}
+}
+
+type fakePage struct {
+	Orders    []map[string]any
+	NextToken string
+}
+
+type fakeClient struct {
+	pages         []fakePage
+	mu            sync.Mutex
+	listCalls     int
+	purchaseCalls int
+}
+
+func newFakeClient(pages []fakePage) *fakeClient {
+	return &fakeClient{pages: pages}
+}
+
+func (f *fakeClient) resetCounts() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.listCalls = 0
+	f.purchaseCalls = 0
+}
+
+func (f *fakeClient) OrderHistory(_ context.Context, _ woltgateway.AuthContext, opts woltgateway.OrderHistoryOptions) (map[string]any, error) {
+	f.mu.Lock()
+	f.listCalls++
+	idx := 0
+	if opts.PageToken != "" {
+		for i, p := range f.pages {
+			if p.NextToken == opts.PageToken {
+				idx = i + 1
+				break
+			}
+		}
+	}
+	if idx >= len(f.pages) {
+		f.mu.Unlock()
+		return map[string]any{"orders": []any{}}, nil
+	}
+	p := f.pages[idx]
+	f.mu.Unlock()
+
+	out := make([]any, 0, len(p.Orders))
+	for _, o := range p.Orders {
+		out = append(out, o)
+	}
+	payload := map[string]any{"orders": out}
+	if p.NextToken != "" {
+		payload["next_page_token"] = p.NextToken
+	}
+	return payload, nil
+}
+
+func (f *fakeClient) OrderHistoryPurchase(_ context.Context, purchaseID string, _ woltgateway.AuthContext) (map[string]any, error) {
+	f.mu.Lock()
+	f.purchaseCalls++
+	f.mu.Unlock()
+	switch purchaseID {
+	case "p1":
+		return map[string]any{
+			"order_number":  "WLT-1",
+			"status":        "delivered",
+			"creation_time": "20/05/2026, 10:00",
+			"delivery_time": "20/05/2026, 10:30",
+			"currency":      "EUR",
+			"totals": map[string]any{
+				"total":       map[string]any{"amount": 1599.0},
+				"subtotal":    map[string]any{"amount": 1399.0},
+				"items":       map[string]any{"amount": 1399.0},
+				"delivery":    map[string]any{"amount": 100.0},
+				"service_fee": map[string]any{"amount": 100.0},
+			},
+			"venue": map[string]any{"id": "v1", "name": "Pizzeria", "country": "FIN"},
+			"items": []any{
+				map[string]any{"id": "i1", "name": "Pizza Margherita", "count": 1.0, "price": map[string]any{"amount": 999.0}, "line_total": map[string]any{"amount": 999.0}},
+			},
+			"payments": []any{
+				map[string]any{"name": "Mastercard ••••1234", "amount": map[string]any{"amount": 1599.0}, "method_type": "card", "provider": "stripe"},
+			},
+		}, nil
+	case "p2":
+		return map[string]any{
+			"order_number":  "WLT-2",
+			"status":        "delivered",
+			"creation_time": "21/05/2026, 14:30",
+			"delivery_time": "21/05/2026, 15:10",
+			"currency":      "EUR",
+			"totals": map[string]any{
+				"total":       map[string]any{"amount": 2499.0},
+				"subtotal":    map[string]any{"amount": 2099.0},
+				"items":       map[string]any{"amount": 2099.0},
+				"delivery":    map[string]any{"amount": 200.0},
+				"service_fee": map[string]any{"amount": 200.0},
+			},
+			"venue": map[string]any{"id": "v2", "name": "Ramen House", "country": "FIN"},
+			"items": []any{
+				map[string]any{"id": "i2", "name": "Tonkotsu", "count": 1.0, "price": map[string]any{"amount": 1499.0}, "line_total": map[string]any{"amount": 1499.0}},
+				map[string]any{"id": "i3", "name": "Gyoza", "count": 1.0, "price": map[string]any{"amount": 600.0}, "line_total": map[string]any{"amount": 600.0}},
+			},
+			"payments": []any{
+				map[string]any{"name": "Wolt+ credits", "amount": map[string]any{"amount": 2499.0}, "method_type": "credits", "provider": "internal"},
+			},
+		}, nil
+	}
+	return nil, nil
+}
+
+func fixedClock() func() time.Time {
+	t := time.Date(2026, 5, 21, 21, 0, 0, 0, time.UTC)
+	return func() time.Time { return t }
+}

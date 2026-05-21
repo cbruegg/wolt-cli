@@ -1,6 +1,6 @@
 # Commands
 
-`wolt-cli` exposes ten top-level commands. Every leaf command supports
+`wolt-cli` exposes eleven top-level commands. Every leaf command supports
 the same machine output (`--format table|json|yaml`) and the same global
 flags listed at the bottom of this page.
 
@@ -16,6 +16,7 @@ flags listed at the bottom of this page.
 | `wolt venue` | Inspect one venue: details, menu, hours, items, categories. |
 | `wolt cart` | Read or mutate the saved basket draft. |
 | `wolt checkout` | Preview the checkout payload (no order placement). |
+| `wolt stats` | Download the wolt-stats dashboard bundle, sync history, and open the browser. |
 
 ---
 
@@ -289,6 +290,59 @@ There is no order-placement command. To place an order, finish in the
 Wolt app or web UI.
 
 ---
+
+## `wolt stats`
+
+```console
+wolt stats                                  # fetch bundle, sync, serve, open browser
+wolt stats --resync                         # force a full history rescan
+wolt stats --no-sync                        # skip sync; just open whatever DB is on disk
+wolt stats --no-open                        # serve without launching the browser
+wolt stats --port 5180                      # use a different localhost port
+wolt stats --bundle-version v0.1.0          # pin a specific wolt-stats release
+wolt stats --no-check-updates               # offline: do not query GitHub for newer bundle
+wolt stats --stats-dir /custom/path         # override default ~/.wolt/stats install dir
+```
+
+The single-step flow:
+
+1. **Resolve install dir.** Defaults to `~/.wolt/stats`. Override with
+   `--stats-dir` or `$WOLT_STATS_DIR`. Created with mode `0700`.
+2. **Ensure bundle.** Queries
+   `https://api.github.com/repos/mekedron/wolt-stats/releases/latest`
+   (ETag-aware, throttled to once per hour via `state.json`). If a newer
+   tarball exists, downloads it, verifies the published SHA256, and
+   extracts into `<stats-dir>/bundles/<version>/`. Older versions are kept
+   for rollback.
+3. **Sync history** (skipped with `--no-sync`). Calls the Wolt API directly
+   (no Node, no subprocess) and writes to
+   `<stats-dir>/db/wolt-history.sqlite` using the same schema the Node
+   `sync-wolt-history.mjs` script writes — the resulting file is
+   interchangeable between the two implementations.
+4. **Serve.** A `net/http` server binds to `127.0.0.1:<port>` (default
+   `5173`; auto-bumps `+1` up to `+4` if busy). The bundle is served at
+   `/`; the SQLite file is served at `/data/wolt-history.sqlite` —
+   localhost only, never the LAN.
+5. **Open browser** unless `--no-open`. Blocks until Ctrl-C, then
+   gracefully shuts the server down (exit code `130`).
+
+On-disk layout:
+
+```
+~/.wolt/stats/
+  state.json                    cached release metadata: active_version, etag, last_checked_at
+  bundles/<version>/            extracted dashboard bundle (index.html, _app/, manifest.json, ...)
+  db/wolt-history.sqlite        synced order history
+```
+
+Failure modes:
+
+- Not logged in → `WOLT_AUTH_REQUIRED` (reuse the same code as the other
+  authenticated commands).
+- GitHub unreachable AND no cached bundle → `WOLT_STATS_BUNDLE_UNAVAILABLE`.
+- Port `5173..5177` all busy → `WOLT_STATS_ENV_ERROR` ("no free port…").
+- `user.email` missing from `UserMe` → `WOLT_STATS_ENV_ERROR` with a
+  "Run \"wolt login\" again" hint.
 
 ## Global flags
 
