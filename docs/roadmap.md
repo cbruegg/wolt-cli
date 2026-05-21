@@ -102,14 +102,6 @@ options. Useful for re-ordering the same meal without scrolling the app.
 - `wolt venues --here` that geocodes the current OS location instead of
   needing `--address`.
 
-## Multi-account opt-in (only if it has a real use case)
-
-The simplification removed multi-profile support deliberately — most
-users have one Wolt account. If a real workflow requires more (e.g.
-testing tenants), reintroduce it as **explicit `wolt --account <name>
-…`** rather than a hidden global flag, with the existing
-`internal/config/store.go` migration preserved for backwards-compat.
-
 ## Tests we still want
 
 These aren't features but they belong on the roadmap:
