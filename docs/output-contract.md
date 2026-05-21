@@ -171,20 +171,31 @@ wolt_plus_only: bool
 sections[]: {
   name: string             # internal name, e.g. "popular-restaurants"
   title: string            # display title, e.g. "Popular near you"
-  items[]: {
+  kind: "venues" | "brands"
+  items[]: {                                          # kind = "venues"
     venue_id, slug, name,
     tagline, top_offer,
     rating, delivery_estimate, delivery_fee,
     price_range, price_range_scale,
     promotions[], badges[], menu_highlights[], wolt_plus
   }
+  brands[]: { name, slug }                            # kind = "brands"
 }
 ```
 
-Same row shape as `venues`, including the additive `badges[]` and
-`menu_highlights[]` fields described above. Sections preserve the
-upstream ordering you see on wolt.com. The `feed` table renders the
-Highlights column by default (pass `--show-highlights=false` to hide).
+Venue sections have the same row shape as `venues`, including the
+additive `badges[]` and `menu_highlights[]` fields described above.
+Sections preserve the upstream ordering you see on wolt.com. The
+`feed` table renders the Highlights column by default (pass
+`--show-highlights=false` to hide).
+
+`kind = "brands"` covers carousels whose entries lack a venue block —
+brand-curated lists ("Popular stores"), restaurant-category tiles, or
+hero banners. `items[]` is always present and empty for that kind;
+`brands[].slug` is the upstream link target (often a curated list ID
+like `woltmarket-popular-brands:helsinki`). The table renders these as
+a single one-line summary; `--query` matches against `brands[].name`
+as well as venue rows.
 
 ### `wolt venues categories` — CategoryList
 

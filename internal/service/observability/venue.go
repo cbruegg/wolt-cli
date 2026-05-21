@@ -44,6 +44,31 @@ func BuildDiscoveryFeed(sections []domain.Section, city string, limit *int, wolt
 
 	for _, section := range resolvedSections {
 		sectionItems := limitSlice(section.Items, limit)
+		title := section.Title
+		if title == "" {
+			title = section.Name
+		}
+
+		// Sections where every item lacks a venue block (curated brand
+		// carousels, restaurant-category tiles, hero banners) classify
+		// as "brands" and emit a one-line summary. Mixed sections never
+		// occur in the upstream payload today; if they do, the venue
+		// items survive and the venueless ones are still dropped.
+		if !sectionHasAnyVenue(sectionItems) {
+			brands := buildBrandSummary(sectionItems)
+			if woltPlusOnly || len(brands) == 0 {
+				continue
+			}
+			sectionRows = append(sectionRows, map[string]any{
+				"name":   section.Name,
+				"title":  title,
+				"kind":   "brands",
+				"items":  []map[string]any{},
+				"brands": brands,
+			})
+			continue
+		}
+
 		rows := make([]map[string]any, 0, len(sectionItems))
 		for _, item := range sectionItems {
 			if item.Venue == nil {
@@ -81,13 +106,10 @@ func BuildDiscoveryFeed(sections []domain.Section, city string, limit *int, wolt
 		if woltPlusOnly && len(rows) == 0 {
 			continue
 		}
-		title := section.Title
-		if title == "" {
-			title = section.Name
-		}
 		sectionRows = append(sectionRows, map[string]any{
 			"name":  section.Name,
 			"title": title,
+			"kind":  "venues",
 			"items": rows,
 		})
 	}
@@ -98,6 +120,42 @@ func BuildDiscoveryFeed(sections []domain.Section, city string, limit *int, wolt
 	}
 
 	return map[string]any{"city": resolvedCity, "wolt_plus_only": woltPlusOnly, "sections": sectionRows}
+}
+
+func sectionHasAnyVenue(items []domain.Item) bool {
+	for _, item := range items {
+		if item.Venue != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// buildBrandSummary collapses non-venue items (brand carousels,
+// category tiles, banner lists) into a stable { name, slug } shape.
+// `slug` is the item's link target — it may be a curated list ID
+// (e.g. "woltmarket-popular-brands:helsinki") rather than a venue
+// slug, but it's a stable identifier the caller can act on.
+func buildBrandSummary(items []domain.Item) []map[string]any {
+	out := make([]map[string]any, 0, len(items))
+	seen := map[string]struct{}{}
+	for _, item := range items {
+		name := strings.TrimSpace(item.Title)
+		slug := strings.TrimSpace(item.Link.Target)
+		if name == "" && slug == "" {
+			continue
+		}
+		key := name + "|" + slug
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, map[string]any{
+			"name": name,
+			"slug": slug,
+		})
+	}
+	return out
 }
 
 // BuildCategoryList extracts category slugs from section tags.

@@ -663,6 +663,74 @@ func TestBuildDiscoveryFeedEmitsEmptyBadgesAndHighlights(t *testing.T) {
 	}
 }
 
+func TestBuildDiscoveryFeedClassifiesBrandSection(t *testing.T) {
+	sections := []domain.Section{
+		{
+			Name:  "FIN_NV_SB_popular-stores",
+			Title: "Popular stores",
+			Items: []domain.Item{
+				{Title: "Wolt Market", Link: domain.Link{Target: "woltmarket-popular-brands:helsinki"}},
+				{Title: "K-Market", Link: domain.Link{Target: "k-market-curated:helsinki"}},
+			},
+		},
+		{
+			Name:  "dinner-venues",
+			Title: "Dinner",
+			Items: []domain.Item{
+				{Title: "Bastard Burgers", Link: domain.Link{Target: "venue-1"}, Venue: &domain.Venue{ID: "venue-1", Slug: "bastard", Currency: "EUR"}},
+			},
+		},
+	}
+	data := observability.BuildDiscoveryFeed(sections, "Helsinki", nil, false)
+	sectionsOut := asSlice(t, data["sections"])
+	if len(sectionsOut) != 2 {
+		t.Fatalf("expected both sections kept, got %d", len(sectionsOut))
+	}
+
+	brandsSection := asMap(t, sectionsOut[0])
+	if brandsSection["kind"] != "brands" {
+		t.Fatalf("expected kind 'brands', got %v", brandsSection["kind"])
+	}
+	items := asSlice(t, brandsSection["items"])
+	if len(items) != 0 {
+		t.Fatalf("expected empty items[] for brand kind, got %d", len(items))
+	}
+	brands := asSlice(t, brandsSection["brands"])
+	if len(brands) != 2 {
+		t.Fatalf("expected 2 brands, got %d", len(brands))
+	}
+	if asMap(t, brands[0])["name"] != "Wolt Market" {
+		t.Fatalf("expected first brand 'Wolt Market', got %v", brands[0])
+	}
+	if asMap(t, brands[0])["slug"] != "woltmarket-popular-brands:helsinki" {
+		t.Fatalf("expected first brand slug to be the link target, got %v", brands[0])
+	}
+
+	venueSection := asMap(t, sectionsOut[1])
+	if venueSection["kind"] != "venues" {
+		t.Fatalf("expected kind 'venues', got %v", venueSection["kind"])
+	}
+	if _, ok := venueSection["brands"]; ok {
+		t.Fatalf("expected no brands key on venue section, got %v", venueSection["brands"])
+	}
+}
+
+func TestBuildDiscoveryFeedSkipsBrandSectionUnderWoltPlusOnly(t *testing.T) {
+	sections := []domain.Section{
+		{
+			Name:  "popular-stores",
+			Title: "Popular stores",
+			Items: []domain.Item{
+				{Title: "Wolt Market", Link: domain.Link{Target: "woltmarket"}},
+			},
+		},
+	}
+	data := observability.BuildDiscoveryFeed(sections, "Helsinki", nil, true)
+	if len(asSlice(t, data["sections"])) != 0 {
+		t.Fatalf("expected brand section dropped under wolt_plus_only, got %v", data["sections"])
+	}
+}
+
 func TestBuildVenueSearchResultSurfacesBadgesAndMenuHighlights(t *testing.T) {
 	items := []domain.Item{
 		{

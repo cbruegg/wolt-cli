@@ -108,28 +108,49 @@ func filterFeedByQuery(data map[string]any, needle string) {
 		if section == nil {
 			continue
 		}
-		items := asSlice(section["items"])
-		matched := make([]any, 0, len(items))
-		for _, rawItem := range items {
-			item := asMap(rawItem)
-			if item == nil {
+		switch asString(section["kind"]) {
+		case "brands":
+			brands := asSlice(section["brands"])
+			matched := make([]any, 0, len(brands))
+			for _, rawBrand := range brands {
+				brand := asMap(rawBrand)
+				if brand == nil {
+					continue
+				}
+				haystack := strings.ToLower(asString(brand["name"]) + " " + asString(brand["slug"]))
+				if strings.Contains(haystack, needle) {
+					matched = append(matched, brand)
+				}
+			}
+			if len(matched) == 0 {
 				continue
 			}
-			haystack := strings.ToLower(
-				asString(item["name"]) + " " +
-					asString(item["tagline"]) + " " +
-					asString(item["top_offer"]) + " " +
-					asString(item["slug"]),
-			)
-			if strings.Contains(haystack, needle) {
-				matched = append(matched, item)
+			section["brands"] = matched
+			kept = append(kept, section)
+		default:
+			items := asSlice(section["items"])
+			matched := make([]any, 0, len(items))
+			for _, rawItem := range items {
+				item := asMap(rawItem)
+				if item == nil {
+					continue
+				}
+				haystack := strings.ToLower(
+					asString(item["name"]) + " " +
+						asString(item["tagline"]) + " " +
+						asString(item["top_offer"]) + " " +
+						asString(item["slug"]),
+				)
+				if strings.Contains(haystack, needle) {
+					matched = append(matched, item)
+				}
 			}
+			if len(matched) == 0 {
+				continue
+			}
+			section["items"] = matched
+			kept = append(kept, section)
 		}
-		if len(matched) == 0 {
-			continue
-		}
-		section["items"] = matched
-		kept = append(kept, section)
 	}
 	data["sections"] = kept
 }
@@ -143,11 +164,18 @@ func capFeedItemsPerSection(data map[string]any, max int) {
 		if section == nil {
 			continue
 		}
-		items := asSlice(section["items"])
-		if len(items) <= max {
-			continue
+		switch asString(section["kind"]) {
+		case "brands":
+			brands := asSlice(section["brands"])
+			if len(brands) > max {
+				section["brands"] = brands[:max]
+			}
+		default:
+			items := asSlice(section["items"])
+			if len(items) > max {
+				section["items"] = items[:max]
+			}
 		}
-		section["items"] = items[:max]
 	}
 }
 
@@ -156,9 +184,9 @@ func buildFeedTable(data map[string]any, showHighlights bool) string {
 	if len(sections) == 0 {
 		return output.RenderTable("Feed", []string{"Section"}, [][]string{{"(no sections)"}})
 	}
-	headers := []string{"Venue", "Slug", "Tagline", "Top offer", "Rating", "Delivery", "Fee"}
+	venueHeaders := []string{"Venue", "Slug", "Tagline", "Top offer", "Rating", "Delivery", "Fee"}
 	if showHighlights {
-		headers = append(headers, "Highlights")
+		venueHeaders = append(venueHeaders, "Highlights")
 	}
 	chunks := make([]string, 0, len(sections))
 	for _, rawSection := range sections {
@@ -173,16 +201,41 @@ func buildFeedTable(data map[string]any, showHighlights bool) string {
 		if title == "" {
 			title = "Section"
 		}
-		rows := buildFeedSectionRows(asSlice(section["items"]), showHighlights)
-		if len(rows) == 0 {
-			continue
+		switch asString(section["kind"]) {
+		case "brands":
+			line := buildBrandSummaryLine(asSlice(section["brands"]))
+			if line == "" {
+				continue
+			}
+			chunks = append(chunks, output.RenderTable(title, nil, [][]string{{line}}))
+		default:
+			rows := buildFeedSectionRows(asSlice(section["items"]), showHighlights)
+			if len(rows) == 0 {
+				continue
+			}
+			chunks = append(chunks, output.RenderTable(title, venueHeaders, rows))
 		}
-		chunks = append(chunks, output.RenderTable(title, headers, rows))
 	}
 	if len(chunks) == 0 {
 		return output.RenderTable("Feed", []string{"Section"}, [][]string{{"(no venues)"}})
 	}
 	return strings.Join(chunks, "\n\n")
+}
+
+func buildBrandSummaryLine(brands []any) string {
+	parts := make([]string, 0, len(brands))
+	for _, raw := range brands {
+		brand := asMap(raw)
+		if brand == nil {
+			continue
+		}
+		name := strings.TrimSpace(asString(brand["name"]))
+		if name == "" {
+			continue
+		}
+		parts = append(parts, name)
+	}
+	return strings.Join(parts, " · ")
 }
 
 func buildFeedSectionRows(items []any, showHighlights bool) [][]string {

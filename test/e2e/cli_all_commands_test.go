@@ -527,6 +527,95 @@ func TestFeedTableShowsHighlightsByDefault(t *testing.T) {
 	}
 }
 
+func TestFeedRendersBrandCarouselAsOneLiner(t *testing.T) {
+	sections := []domain.Section{
+		{
+			Name:  "FIN_NV_SB_popular-stores",
+			Title: "Popular stores",
+			Items: []domain.Item{
+				{Title: "Wolt Market", Link: domain.Link{Target: "woltmarket-popular-brands:helsinki"}},
+				{Title: "K-Market", Link: domain.Link{Target: "k-market:helsinki"}},
+				{Title: "Lidl", Link: domain.Link{Target: "lidl:helsinki"}},
+			},
+		},
+	}
+	deps := cli.Dependencies{
+		Wolt: &mockWolt{
+			sectionsFunc: func(context.Context, domain.Location) ([]domain.Section, error) {
+				return sections, nil
+			},
+		},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 60.1, Lon: 24.9}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+
+	exitCode, out := runCLIWithDeps(t, deps, "feed")
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
+	}
+	if !strings.Contains(out, "Popular stores") {
+		t.Fatalf("expected section title in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Wolt Market · K-Market · Lidl") {
+		t.Fatalf("expected one-line brand summary, got:\n%s", out)
+	}
+	if strings.Contains(out, "(no venues)") {
+		t.Fatalf("brand-only feed should not collapse to '(no venues)', got:\n%s", out)
+	}
+}
+
+func TestFeedQueryMatchesBrandSection(t *testing.T) {
+	sections := []domain.Section{
+		{
+			Name:  "stores",
+			Title: "Popular stores",
+			Items: []domain.Item{
+				{Title: "K-Market", Link: domain.Link{Target: "k-market:helsinki"}},
+				{Title: "Lidl", Link: domain.Link{Target: "lidl:helsinki"}},
+			},
+		},
+		{
+			Name:  "dinner-venues",
+			Title: "Dinner",
+			Items: []domain.Item{
+				{Title: "Bastard Burgers", Link: domain.Link{Target: "venue-1"}, Venue: &domain.Venue{ID: "venue-1", Slug: "bastard", Currency: "EUR"}},
+			},
+		},
+	}
+	deps := cli.Dependencies{
+		Wolt: &mockWolt{
+			sectionsFunc: func(context.Context, domain.Location) ([]domain.Section, error) {
+				return sections, nil
+			},
+		},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 60.1, Lon: 24.9}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+
+	exitCode, out := runCLIWithDeps(t, deps, "feed", "--query", "lidl", "--format", "json")
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
+	}
+	payload := mustJSON(t, out)
+	data := asMapPayload(t, payload["data"])
+	sectionsOut := asSlicePayload(t, data["sections"])
+	if len(sectionsOut) != 1 {
+		t.Fatalf("expected only the matching brand section, got %d sections:\n%s", len(sectionsOut), out)
+	}
+	first := asMapPayload(t, sectionsOut[0])
+	if first["kind"] != "brands" {
+		t.Fatalf("expected kind 'brands', got %v", first["kind"])
+	}
+	brands := asSlicePayload(t, first["brands"])
+	if len(brands) != 1 || asMapPayload(t, brands[0])["name"] != "Lidl" {
+		t.Fatalf("expected only Lidl to survive --query lidl, got %v", brands)
+	}
+}
+
 func TestFeedJSONIncludesBadgesAndMenuHighlights(t *testing.T) {
 	sections := []domain.Section{
 		{
