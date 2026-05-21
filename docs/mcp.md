@@ -216,4 +216,4 @@ higher on slow networks:
 - The server is in-process — `cmd/wolt-mcp/main.go` builds the same gateway and
   service objects the CLI uses, then calls them directly from typed handlers in
   `internal/mcpserver/`.
-- Source: [`cmd/wolt-mcp/`](../cmd/wolt-mcp/) and [`internal/mcpserver/`](../internal/mcpserver/).
+- Source: [`cmd/wolt-mcp/`](https://github.com/mekedron/wolt-cli/tree/main/cmd/wolt-mcp) and [`internal/mcpserver/`](https://github.com/mekedron/wolt-cli/tree/main/internal/mcpserver).

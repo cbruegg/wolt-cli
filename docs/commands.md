@@ -4,6 +4,13 @@
 the same machine output (`--format table|json|yaml`) and the same global
 flags listed at the bottom of this page.
 
+> **Driving from an AI client?** The same business logic is also exposed via
+> the bundled `wolt-mcp` server, which speaks the Model Context Protocol
+> (Claude Desktop, Claude Code, Cursor, …). See [`mcp.md`](mcp.md) for the
+> tool catalog and wiring snippets. The CLI commands below stay the
+> authoritative reference for flag shape, output envelope, and behavior; the
+> MCP tools wrap the same code paths.
+
 | Command | Purpose |
 |---|---|
 | `wolt login` | Save a Wolt account locally via Chrome cookies or manual tokens. |

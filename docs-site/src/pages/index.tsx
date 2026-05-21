@@ -568,6 +568,78 @@ function Features() {
   );
 }
 
+function Stats() {
+  const overview = useBaseUrl('/img/stats/dashboard-overview.png');
+  const detail = useBaseUrl('/img/stats/dashboard-detail.png');
+  return (
+    <section id="stats" className="stats">
+      <header className="section-head">
+        <span className="section-head__eyebrow">Bring your data home</span>
+        <h2 className="section-head__title">
+          <code>wolt stats</code> — your order history, your dashboard.
+        </h2>
+        <p className="section-head__lede">
+          One command syncs every order you've ever placed into a local SQLite database
+          and opens a local dashboard at <code>http://127.0.0.1:5173</code>. Spend
+          breakdown, top venues, favourite items — all derived from the same payloads
+          the CLI already speaks. Nothing leaves your machine.
+        </p>
+      </header>
+
+      <div className="stats__grid">
+        <div className="stats__copy">
+          <ul className="stats__bullets">
+            <li>
+              <strong>Incremental by default.</strong> Reruns scan until they hit an
+              order they already know, so the second run takes seconds. Pass{' '}
+              <code>--resync</code> for a full rebuild.
+            </li>
+            <li>
+              <strong>Local-only data.</strong> The SQLite file lives at{' '}
+              <code>~/.wolt/stats/db/wolt-history.sqlite</code>. The dashboard bundle
+              is pinned to a versioned GitHub release.
+            </li>
+            <li>
+              <strong>Adaptive rate-limiting.</strong> Honors Wolt's{' '}
+              <code>Retry-After</code> header and tunes per-call pacing to whatever
+              your account's rate budget will sustain.
+            </li>
+            <li>
+              <strong>Browser optional.</strong> <code>--no-open</code> serves the
+              dashboard without launching a tab. <code>--no-sync</code> opens the
+              dashboard against whatever's already in the local DB.
+            </li>
+          </ul>
+          <pre className="snippet">
+            <code>
+              <span className="tk-fn">wolt</span> stats{'\n'}
+              <span className="tk-mut"># Re-open without re-syncing</span>
+              {'\n'}
+              <span className="tk-fn">wolt</span> stats <span className="tk-fl">--no-sync</span>{'\n'}
+              <span className="tk-mut"># Force a full re-scan of every order</span>
+              {'\n'}
+              <span className="tk-fn">wolt</span> stats <span className="tk-fl">--resync</span>
+            </code>
+          </pre>
+          <p className="stats__more">
+            <a href="/wolt-cli/docs/stats">Full stats reference →</a>
+          </p>
+        </div>
+        <div className="stats__media">
+          <figure className="stats__shot stats__shot--primary">
+            <img src={overview} alt="wolt stats dashboard overview" loading="lazy" />
+            <figcaption>Dashboard overview — spend by month, top venues, item leaderboards.</figcaption>
+          </figure>
+          <figure className="stats__shot stats__shot--secondary">
+            <img src={detail} alt="wolt stats detail view" loading="lazy" />
+            <figcaption>Per-venue and per-item drill-down for every purchase.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function Install() {
   return (
     <section id="install" className="install">
@@ -824,13 +896,15 @@ function Agents() {
     },
     {
       name: 'Claude Desktop',
-      tag: 'MCP-ready',
+      tag: 'native MCP',
       accent: 'blue',
       body: (
         <>
-          Predictable flags + structured JSON output read like a tool made for
-          MCP wrappers. Drop it in as a shell tool, or wrap a few commands in
-          your own tiny MCP server.
+          Drop the one-liner below into{' '}
+          <code>claude_desktop_config.json</code> and Claude gets 24 typed
+          tools — feed, search, venue menu, cart, checkout preview — backed
+          by the bundled <code>wolt-mcp</code> binary. No wrappers, no glue
+          code.
         </>
       ),
       icon: (
@@ -952,9 +1026,9 @@ function Agents() {
       accent: 'cyan',
       body: (
         <>
-          OpenAI's shell-native coder. <code>wolt --format json | jq</code>{' '}
-          is exactly its native input — no glue code, no MCP server required
-          for the first script.
+          OpenAI's shell-native coder. Pipe <code>wolt --format json</code>{' '}
+          straight into a prompt, or attach the <code>wolt-mcp</code> server
+          for typed tool calls. Both work; the shell flow is one command.
         </>
       ),
       icon: (
@@ -999,6 +1073,8 @@ function Agents() {
   ];
 
   const {copiedKey, copy} = useCopy();
+  const mcpConfigText = `{\n  "mcpServers": {\n    "wolt": { "command": "wolt-mcp" }\n  }\n}`;
+  const mcpCopied = copiedKey === 'agents-mcp';
   const demoText = [
     '# 1. Discover',
     'wolt venues --query ramen --sort rating --format json',
@@ -1026,12 +1102,51 @@ function Agents() {
           Drive wolt-cli from <span className="grad">your AI of choice.</span>
         </h2>
         <p className="section-head__lede">
-          One binary. <code>--format json</code> on every command. Predictable
-          flags. wolt-cli reads like a tool that was built to be driven by
-          agents — whether you're inside Claude Desktop, the lobster way with
-          OpenClaw and PicoClaw, or your favourite coding CLI.
+          Two ways in. Pipe <code>wolt --format json</code> straight into a
+          shell-driving agent (Codex CLI, Cursor, Cline, Aider), or wire up
+          the bundled <code>wolt-mcp</code> server for typed{' '}
+          <a href="https://modelcontextprotocol.io" target="_blank" rel="noreferrer">
+            Model Context Protocol
+          </a>{' '}
+          tool calls in Claude Desktop, Claude Code, and any other MCP host.
         </p>
       </header>
+
+      <div className="agents__mcp" aria-label="MCP wiring">
+        <div className="agents__mcp-copy">
+          <span className="agents__mcp-eyebrow">Plug in once</span>
+          <h3 className="agents__mcp-title">
+            One config line, 24 typed tools.
+          </h3>
+          <p>
+            <code>wolt-mcp</code> ships in the same Homebrew formula as the
+            CLI. It shares the same login on disk, so one{' '}
+            <code>wolt login</code> unlocks every auth-gated tool —{' '}
+            <code>wolt_cart_show</code>, <code>wolt_account_orders</code>,{' '}
+            <code>wolt_checkout_preview</code>, and all the rest.
+          </p>
+          <a className="btn btn--ghost" href="https://github.com/mekedron/wolt-cli/blob/main/docs/mcp.md">
+            Full tool catalog →
+          </a>
+        </div>
+        <div className="codeblock">
+          <pre>
+            <code>
+              {'{'}{'\n'}
+              {'  '}<span className="tk-st">"mcpServers"</span>: {'{'}{'\n'}
+              {'    '}<span className="tk-st">"wolt"</span>: {'{ '}<span className="tk-st">"command"</span>: <span className="tk-st">"wolt-mcp"</span>{' }'}{'\n'}
+              {'  '}{'}'}{'\n'}
+              {'}'}
+            </code>
+          </pre>
+          <button
+            type="button"
+            className={`codeblock__copy${mcpCopied ? ' is-copied' : ''}`}
+            onClick={() => copy('agents-mcp', mcpConfigText)}>
+            {mcpCopied ? 'Copied' : 'Copy'}
+          </button>
+        </div>
+      </div>
 
       <div className="agents__grid">
         {agents.map((a) => (
@@ -1051,6 +1166,10 @@ function Agents() {
       </div>
 
       <div className="agents__why" aria-label="Why wolt-cli is agent-friendly">
+        <div className="agents__why-cell">
+          <span className="agents__why-k">Native MCP server</span>
+          <span className="agents__why-v">24 typed tools, stdio transport, official Anthropic SDK</span>
+        </div>
         <div className="agents__why-cell">
           <span className="agents__why-k">Single binary</span>
           <span className="agents__why-v">zero deps, any host the agent can shell into</span>
@@ -1132,6 +1251,23 @@ function FAQ() {
           projects totals and fees. Final order placement still happens in the
           official Wolt app or website, using the delivery address selected in
           your account.
+        </>
+      ),
+    },
+    {
+      q: 'Does it ship an MCP server?',
+      a: (
+        <>
+          Yes. The companion <code>wolt-mcp</code> binary is installed
+          alongside <code>wolt</code> by the Homebrew formula and exposes 24
+          typed Model Context Protocol tools (discovery, venue, account,
+          favorites, cart, checkout preview). Wire it in with{' '}
+          <code>{`{ "mcpServers": { "wolt": { "command": "wolt-mcp" } } }`}</code>
+          {' '}— see{' '}
+          <a href="https://github.com/mekedron/wolt-cli/blob/main/docs/mcp.md">
+            docs/mcp.md
+          </a>{' '}
+          for the full catalog and per-client wiring.
         </>
       ),
     },
@@ -1329,6 +1465,7 @@ export default function Home(): ReactNode {
         <Hero />
         <Trust />
         <Features />
+        <Stats />
         <Install />
         <Example />
         <Commands />

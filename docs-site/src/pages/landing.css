@@ -580,6 +580,94 @@
 }
 
 /* ============================================================
+   STATS
+   ============================================================ */
+
+.wcli-home .stats {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: clamp(72px, 9vw, 120px) var(--gutter);
+}
+.wcli-home .stats__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: clamp(28px, 4vw, 56px);
+  align-items: start;
+}
+@media (max-width: 960px) {
+  .wcli-home .stats__grid { grid-template-columns: 1fr; }
+}
+.wcli-home .stats__copy { min-width: 0; }
+.wcli-home .stats__bullets {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 20px;
+  display: grid;
+  gap: 14px;
+}
+.wcli-home .stats__bullets li {
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--muted);
+  padding-left: 22px;
+  position: relative;
+}
+.wcli-home .stats__bullets li::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0.55em;
+  width: 8px; height: 8px;
+  border-radius: 2px;
+  background: var(--blue);
+}
+.wcli-home .stats__bullets strong { color: var(--fg); font-weight: 600; }
+.wcli-home .stats__bullets code {
+  font-size: 12.5px;
+  background: var(--bg-2);
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: var(--fg-2);
+}
+.wcli-home .stats .snippet {
+  margin: 0 0 12px;
+}
+.wcli-home .stats__more {
+  margin: 0;
+  font-size: 14px;
+}
+.wcli-home .stats__more a {
+  color: var(--blue-deep);
+  text-decoration: none;
+  font-weight: 500;
+}
+.wcli-home .stats__more a:hover { text-decoration: underline; }
+.wcli-home .stats__media {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.wcli-home .stats__shot {
+  margin: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+}
+.wcli-home .stats__shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.wcli-home .stats__shot figcaption {
+  font-size: 12.5px;
+  color: var(--muted);
+  padding: 10px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+}
+
+/* ============================================================
    INSTALL
    ============================================================ */
 
@@ -1099,6 +1187,61 @@
   border-radius: 4px;
   font-size: 12.5px;
 }
+
+/* MCP wiring block — copy on the left, JSON snippet on the right */
+.wcli-home .agents__mcp {
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  gap: 22px;
+  align-items: stretch;
+  margin: 18px 0 28px;
+  padding: 22px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--blue) 8%, var(--surface)) 0%,
+    var(--surface) 70%
+  );
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+@media (max-width: 900px) {
+  .wcli-home .agents__mcp { grid-template-columns: 1fr; }
+}
+.wcli-home .agents__mcp-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+.wcli-home .agents__mcp-eyebrow {
+  font-family: var(--wcli-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--blue-deep);
+}
+.wcli-home .agents__mcp-title {
+  margin: 0;
+  font-size: clamp(18px, 1.8vw, 22px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+}
+.wcli-home .agents__mcp p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+.wcli-home .agents__mcp code {
+  background: var(--code-inline-bg);
+  color: var(--code-inline-fg);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 12.5px;
+}
+.wcli-home .agents__mcp .btn { margin-top: 4px; }
+.wcli-home .agents__mcp .codeblock { margin: 0; }
 
 /* ============================================================
    FAQ

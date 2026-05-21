@@ -10,6 +10,16 @@ Open the repository for setup/build details, then use the local binary:
 wolt <group> <command> [flags]
 ```
 
+> If you are an agent running inside an MCP host (Claude Desktop, Claude
+> Code, Cursor, …), prefer the typed tools served by the bundled `wolt-mcp`
+> binary over shelling to the CLI. Same auth on disk, same payloads, no
+> flag-guessing. Tool surface: `wolt_feed`, `wolt_top`,
+> `wolt_search_venues`, `wolt_venue_categories`, `wolt_resolve_address`,
+> `wolt_venue_detail`, `wolt_venue_menu`, `wolt_venue_hours`,
+> `wolt_venue_item`, `wolt_venue_search_items`, `wolt_account_*`,
+> `wolt_favorites_*`, `wolt_cart_*`, `wolt_checkout_preview`. Full catalog
+> and per-client wiring in `../docs/mcp.md`.
+
 Leaf commands share global flags unless noted:
 
 - `--format table|json|yaml`
