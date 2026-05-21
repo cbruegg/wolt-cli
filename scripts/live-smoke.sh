@@ -7,11 +7,14 @@
 # you're already logged into.
 #
 # In CI, set:
-#   WOLT_SMOKE_WTOKEN          access token (will be auto-rotated)
-#   WOLT_SMOKE_WREFRESH_TOKEN  refresh token (the durable secret)
-# When both are present the script writes a fresh config to ~/.wolt/
-# before running — overwriting any existing local login. Skip the
-# env-var path when running locally to keep your real session intact.
+#   WOLT_SMOKE_CONFIG_JSON  contents of ~/.wolt/.wolt-config.json
+# When set, the script writes it to ~/.wolt/.wolt-config.json verbatim,
+# overwriting any existing local login. Seed it with:
+#     gh secret set WOLT_SMOKE_CONFIG_JSON < ~/.wolt/.wolt-config.json
+# That carries the full set of session cookies Wolt requires
+# (telemetryDeviceId, activeLocation, etc.) — synthesising only
+# __wtoken/__wrtoken returns 401 "session expired".
+# Skip the env-var path when running locally to keep your real session intact.
 #
 # READ-ONLY ENDPOINTS ONLY. Never add login/logout, cart-add/remove/
 # clear, or checkout placement — this script runs on a real account.
@@ -78,32 +81,21 @@ run() {
   fi
 }
 
-# seed_config_from_env — when CI hands us the secrets, write them to
-# ~/.wolt/.wolt-config.json with owner-only perms. Built via jq -n so
-# token contents never go through shell interpolation.
+# seed_config_from_env — when CI hands us the full config blob, write
+# it to ~/.wolt/.wolt-config.json with owner-only perms. Roundtrip
+# through jq so we (a) validate it's well-formed JSON before disk
+# touch, (b) overwrite the local location with Helsinki center for
+# stable smoke results.
 seed_config_from_env() {
-  if [ -z "${WOLT_SMOKE_WTOKEN:-}" ] && [ -z "${WOLT_SMOKE_WREFRESH_TOKEN:-}" ]; then
+  if [ -z "${WOLT_SMOKE_CONFIG_JSON:-}" ]; then
     return 0
-  fi
-  if [ -z "${WOLT_SMOKE_WTOKEN:-}" ] || [ -z "${WOLT_SMOKE_WREFRESH_TOKEN:-}" ]; then
-    echo "::error::Both WOLT_SMOKE_WTOKEN and WOLT_SMOKE_WREFRESH_TOKEN must be set."
-    exit 2
   fi
   mkdir -p "${HOME}/.wolt"
   umask 077
-  jq -n \
-    --arg w "${WOLT_SMOKE_WTOKEN}" \
-    --arg r "${WOLT_SMOKE_WREFRESH_TOKEN}" \
-    --argjson lat "${HEL_LAT}" \
-    --argjson lon "${HEL_LON}" \
-    '{
-      account: {
-        wtoken: $w,
-        wrefresh_token: $r,
-        cookies: [ ("__wtoken=" + $w), ("__wrtoken=" + $r) ],
-        location: { lat: $lat, lon: $lon }
-      }
-    }' >"${HOME}/.wolt/.wolt-config.json"
+  printf '%s' "${WOLT_SMOKE_CONFIG_JSON}" \
+    | jq --argjson lat "${HEL_LAT}" --argjson lon "${HEL_LON}" \
+        '.account.location = {lat: $lat, lon: $lon}' \
+    >"${HOME}/.wolt/.wolt-config.json"
   chmod 600 "${HOME}/.wolt/.wolt-config.json"
 }
 

@@ -4,19 +4,21 @@ name: Live smoke (weekly)
 # upstream contract drift before users do. Read-only only — no
 # login, no cart mutations, no checkout placement, no stats sync.
 #
-# Required repository secrets:
-#   WOLT_SMOKE_WTOKEN          access token (auto-rotated on refresh)
-#   WOLT_SMOKE_WREFRESH_TOKEN  refresh token (the durable secret)
+# Required repository secret:
+#   WOLT_SMOKE_CONFIG_JSON  contents of ~/.wolt/.wolt-config.json
 #
-# Refresh-token rotation caveat: if Wolt rotates the refresh token on
-# every use (as most OAuth providers do), the secret will be stale
-# after the first run. When the workflow fails for that reason,
-# re-seed the secrets from a fresh local login:
+# Seed it in one shot from a logged-in machine:
+#   wolt status >/dev/null  # ensures tokens are current on disk
+#   gh secret set WOLT_SMOKE_CONFIG_JSON < ~/.wolt/.wolt-config.json
 #
-#   wolt status   # triggers a refresh and persists rotated tokens
-#   python3 -c "import json; c=json.load(open('$HOME/.wolt/.wolt-config.json')); a=c['account']; print('WTOKEN=',a['wtoken']); print('WRTOKEN=',a['wrefresh_token'])"
+# Why the whole config (not just wtoken + wrefresh_token): Wolt binds
+# the session to device-level cookies (telemetryDeviceId, activeLocation,
+# lantern, etc.). A synthetic config with only __wtoken / __wrtoken
+# returns 401 "session expired" even with valid tokens.
 #
-# Then paste the values back into the GitHub repo secrets.
+# Rotation caveat: if Wolt rotates the refresh token on every use,
+# the secret will be stale after the first run. Re-seed with the
+# same one-liner above.
 
 on:
   schedule:
@@ -41,8 +43,7 @@ jobs:
     timeout-minutes: 10
 
     env:
-      WOLT_SMOKE_WTOKEN: ${{ secrets.WOLT_SMOKE_WTOKEN }}
-      WOLT_SMOKE_WREFRESH_TOKEN: ${{ secrets.WOLT_SMOKE_WREFRESH_TOKEN }}
+      WOLT_SMOKE_CONFIG_JSON: ${{ secrets.WOLT_SMOKE_CONFIG_JSON }}
 
     steps:
       - name: Checkout
@@ -63,12 +64,16 @@ jobs:
             -o bin/wolt ./cmd/wolt
           ./bin/wolt --version
 
-      - name: Verify smoke secrets are set
+      - name: Verify smoke secret is set
         run: |
-          if [ -z "${WOLT_SMOKE_WTOKEN}" ] || [ -z "${WOLT_SMOKE_WREFRESH_TOKEN}" ]; then
-            echo "::error::Required secrets WOLT_SMOKE_WTOKEN and WOLT_SMOKE_WREFRESH_TOKEN are missing. See workflow header for seeding instructions."
+          if [ -z "${WOLT_SMOKE_CONFIG_JSON}" ]; then
+            echo "::error::Required secret WOLT_SMOKE_CONFIG_JSON is missing. See workflow header for seeding instructions."
             exit 1
           fi
+          # Sanity-check the secret is well-formed JSON without echoing
+          # any of its contents. jq exits non-zero on parse error.
+          printf '%s' "${WOLT_SMOKE_CONFIG_JSON}" | jq -e '.account.wtoken | type == "string" and length > 100' >/dev/null \
+            || { echo "::error::WOLT_SMOKE_CONFIG_JSON is not valid JSON, or .account.wtoken is missing/short."; exit 1; }
 
       - name: Run live smoke
         # The script prints only its own status lines and a redacted
@@ -126,11 +131,14 @@ jobs:
 
           - Run: ${run_url}
           - Likely causes (in rough order of frequency):
-            1. \`WOLT_SMOKE_WREFRESH_TOKEN\` has been rotated and is now stale → re-seed the secret from a fresh local login.
+            1. \`WOLT_SMOKE_CONFIG_JSON\` has gone stale (tokens / cookies rotated). Re-seed from a logged-in machine:
+               \`\`\`
+               wolt status >/dev/null && gh secret set WOLT_SMOKE_CONFIG_JSON < ~/.wolt/.wolt-config.json
+               \`\`\`
             2. Wolt changed an endpoint contract (the smoke is doing its job — fix the gateway parser).
             3. Transient Wolt 5xx / 429 burst → rerun via Actions → Live smoke (weekly) → Run workflow.
 
-          See the failed step in the run for the specific endpoint and stderr.
+          See the failed step in the run for the specific endpoint and the pre-flight HTTP trace.
           EOF
           )
           existing="$(gh issue list --state open --search "in:title \"${title_prefix}\"" --json number --jq '.[0].number' || true)"
