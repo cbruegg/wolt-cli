@@ -29,6 +29,15 @@
   - `go test ./...`
   - `go test -race ./...`
 
+## Git Hooks
+
+- The repo ships pre-commit + pre-push hooks under `scripts/git-hooks/` that
+  automate the gates above. Install once per clone:
+  - `./scripts/install-git-hooks.sh`
+- After install, `git commit` runs gofmt + `go vet` on staged Go files; `git push`
+  runs the full pre-push gate (only when pushing to `main` or a `v*` tag).
+- Emergency bypass: `git commit --no-verify`, `git push --no-verify`.
+
 ## Chrome DevTools MCP
 
 You can run and test anything in Chrome browser using `chrome-devtools` MCP server. NEVER use `claude-in-chrome` MCP — always use `chrome-devtools` MCP exclusively for all browser automation.

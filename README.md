@@ -23,6 +23,41 @@ It is not affiliated with Wolt. Use it at your own responsibility.
 
 - Go `1.26+`
 
+## Development Setup
+
+**Required for all contributors.** Right after `git clone`, install the
+repo-tracked git hooks so commits and pushes are gated by the same checks
+the remote CI runs. Without this step, pushes tend to fail CI on the
+"trivial" gates (gofmt drift, missing lint fixes, race-detector regressions).
+
+```bash
+make install-hooks
+# or, equivalently:
+./scripts/install-git-hooks.sh
+```
+
+The installer wires `git config core.hooksPath -> scripts/git-hooks/`, so
+the hooks live in-tree (`scripts/git-hooks/`) and update automatically with
+every `git pull`. It is idempotent — safe to re-run.
+
+What the hooks do:
+
+- **`pre-commit`** (fast) — runs `gofmt -l` on staged Go files and
+  `go vet ./...`. Blocks commits with formatting drift or vet errors.
+- **`pre-push`** (full CI parity, only when pushing `main` or a `v*` tag) —
+  runs `go mod download`, `go build ./...`, the versioned `wolt --version`
+  round-trip, `golangci-lint run`, `go test ./...`, and `go test -race ./...`.
+  Mirrors `.github/workflows/go-ci.yml` exactly.
+
+If `golangci-lint` is missing the installer prints a hint; you'll also need:
+
+```bash
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.4.0
+```
+
+Emergency bypass (avoid unless something is on fire): `git commit --no-verify`,
+`git push --no-verify`.
+
 ## Recommended Install (Homebrew Tap)
 
 Use the dedicated tap at [mekedron/tap](https://github.com/mekedron/tap):

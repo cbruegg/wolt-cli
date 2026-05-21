@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# pre-commit — fast local check that blocks commits which would fail the
+# remote Go CI for trivial reasons.
+#
+# Runs:
+#   1. gofmt -l on staged .go files (this is the check the remote
+#      golangci-lint job runs; gofmt drift is the #1 cause of a green
+#      go test + red CI).
+#   2. go vet on every package (~1s; catches obvious build / vet errors
+#      before they reach the pre-push hook or the remote CI).
+#
+# Bypass for emergencies: git commit --no-verify
+#
+# Installed by scripts/install-git-hooks.sh.
+
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"
+[ -n "${repo_root}" ] || exit 0
+cd "${repo_root}"
+
+# Gather staged Go files (Added, Copied, Modified, Renamed; skip Deleted).
+# Avoid bash 4+ features (mapfile) so the hook works on macOS's stock bash 3.2.
+staged_go="$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.go$' || true)"
+
+if [ -z "${staged_go}" ]; then
+  exit 0
+fi
+
+# 1. gofmt
+needs_fmt="$(echo "${staged_go}" | xargs gofmt -l 2>/dev/null || true)"
+if [ -n "${needs_fmt}" ]; then
+  echo "pre-commit: the following files are not gofmt-formatted:" >&2
+  echo "${needs_fmt}" | sed 's/^/  /' >&2
+  echo "" >&2
+  oneline_paths="$(echo "${needs_fmt}" | tr '\n' ' ')"
+  echo "fix with: gofmt -w ${oneline_paths}" >&2
+  echo "(bypass: git commit --no-verify)" >&2
+  exit 1
+fi
+
+# 2. go vet — runs on the whole module rather than per-file so we catch
+# cross-package issues introduced by the staged change.
+if ! go vet ./... 2>&1; then
+  echo "" >&2
+  echo "pre-commit: go vet failed. Fix and re-stage, or bypass with --no-verify." >&2
+  exit 1
+fi
