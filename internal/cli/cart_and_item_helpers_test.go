@@ -1,9 +1,19 @@
 package cli
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
+
+// normalizeTableWhitespace collapses runs of spaces into single spaces
+// so test assertions can target the cell content without depending on
+// tabwriter's column padding (which varies with the widest row).
+var multiSpaceTable = regexp.MustCompile(`[ \t]+`)
+
+func normalizeTableWhitespace(rendered string) string {
+	return multiSpaceTable.ReplaceAllString(rendered, " ")
+}
 
 func TestCurrencyAndAmountHelpers(t *testing.T) {
 	if got := inferCurrency("€12.34"); got != "EUR" {
@@ -179,12 +189,12 @@ func TestBuildItemDetailTableFormatsGroups(t *testing.T) {
 		"upsell_items": []any{},
 	}
 
-	rendered := buildItemDetailTable(data)
+	rendered := normalizeTableWhitespace(buildItemDetailTable(data))
 	for _, expected := range []string{
-		"Option groups\t1",
-		"Upsell items\t0",
-		"Option groups\nGroup ID\tName\tRequired\tMin\tMax",
-		"group-drink\tDrink\tyes\t1\t1",
+		"Option groups 1",
+		"Upsell items 0",
+		"Option groups\nGroup ID Name Required Min Max",
+		"group-drink Drink yes 1 1",
 	} {
 		if !strings.Contains(rendered, expected) {
 			t.Fatalf("expected output to contain %q, got:\n%s", expected, rendered)

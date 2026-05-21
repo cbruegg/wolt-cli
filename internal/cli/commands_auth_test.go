@@ -48,7 +48,7 @@ func TestBuildAuthStatusTableIncludesWoltPlusSubscriber(t *testing.T) {
 		"session_expires_at":   "2026-02-20T12:00:00Z",
 	})
 
-	if !strings.Contains(table, "Wolt+ subscriber\tyes") {
+	if !strings.Contains(normalizeTableWhitespace(table), "Wolt+ subscriber yes") {
 		t.Fatalf("expected table to include Wolt+ row, got:\n%s", table)
 	}
 }

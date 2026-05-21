@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -104,20 +105,23 @@ func WriteOutput(w io.Writer, text string, outputPath string) error {
 	return nil
 }
 
-// RenderTable renders plain text tables.
+// RenderTable renders plain text tables with column-aligned cells.
+// Uses text/tabwriter so the same input that used to print
+// "Venue\tSlug\tTagline" now produces visually aligned columns
+// regardless of the terminal's tab-stop width.
 func RenderTable(title string, headers []string, rows [][]string) string {
 	var b strings.Builder
 	if title != "" {
 		b.WriteString(title)
 		b.WriteByte('\n')
 	}
+	tw := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 	if len(headers) > 0 {
-		b.WriteString(strings.Join(headers, "\t"))
-		b.WriteByte('\n')
+		fmt.Fprintln(tw, strings.Join(headers, "\t"))
 	}
 	for _, row := range rows {
-		b.WriteString(strings.Join(row, "\t"))
-		b.WriteByte('\n')
+		fmt.Fprintln(tw, strings.Join(row, "\t"))
 	}
+	_ = tw.Flush()
 	return strings.TrimRight(b.String(), "\n")
 }
