@@ -661,6 +661,44 @@ func slugify(s string) string {
 	return out
 }
 
+// extractDetailMinor looks up an amount on the detail payload, preferring
+// the flat top-level integer field Wolt actually returns
+// (e.g. detail["total_price"] = 1609) and falling back to the legacy
+// nested shape detail["totals"][totalsKey] used by older fixtures /
+// hypothetical schemas. Returning zero from a flat hit still falls
+// through to the nested map, so "credits: 0 + totals.credits: 500"
+// yields 500 if anyone ever ships both.
+func extractDetailMinor(detail map[string]any, flatKey, totalsKey string) int {
+	if v, ok := detail[flatKey]; ok && v != nil {
+		if n := extractMinor(v); n != 0 {
+			return n
+		}
+	}
+	totals := asMap(detail["totals"])
+	if totals == nil {
+		return 0
+	}
+	return extractMinor(totals[totalsKey])
+}
+
+// firstNonNilString returns the first map value at any of keys that is a
+// non-blank string (after trim). Used to coalesce a flat top-level field
+// with its nested-map equivalent, e.g.
+// detail.venue_country → venue.country.
+func firstNonNilString(sources []map[string]any, keys ...string) interface{} {
+	for _, src := range sources {
+		if src == nil {
+			continue
+		}
+		for _, k := range keys {
+			if v := nullableString(src[k]); v != nil {
+				return v
+			}
+		}
+	}
+	return nil
+}
+
 func extractMinor(candidate any) int {
 	if candidate == nil {
 		return 0

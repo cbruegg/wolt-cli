@@ -183,7 +183,54 @@ func openStore(ctx context.Context, dbPath string) (*sql.DB, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("statssync: create schema: %w", err)
 	}
+	if err := repairLegacyZeroAmounts(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("statssync: repair legacy amounts: %w", err)
+	}
 	return db, nil
+}
+
+// repairLegacyZeroAmounts heals the post-upgrade case where an older
+// statssync wrote orders rows with total_amount_minor=0 because it was
+// reading from a non-existent nested totals.* map instead of Wolt's flat
+// top-level *_price fields. Idempotent — only touches rows where the
+// stored amount is zero but the raw_json carries a positive total_price.
+// Costs one UPDATE statement when no legacy rows exist (the WHERE filter
+// matches nothing); a few hundred ms on a fully-broken DB of ~1k rows.
+func repairLegacyZeroAmounts(ctx context.Context, db *sql.DB) error {
+	_, err := db.ExecContext(ctx, `
+		UPDATE orders SET
+		  total_amount_minor = COALESCE(json_extract(raw_json, '$.total_price'),
+		                                json_extract(raw_json, '$.totals.total.amount'),    total_amount_minor),
+		  subtotal_minor     = COALESCE(json_extract(raw_json, '$.subtotal'),
+		                                json_extract(raw_json, '$.totals.subtotal.amount'), subtotal_minor),
+		  items_amount_minor = COALESCE(json_extract(raw_json, '$.items_price'),
+		                                json_extract(raw_json, '$.totals.items.amount'),    items_amount_minor),
+		  delivery_fee_minor = COALESCE(json_extract(raw_json, '$.delivery_price'),
+		                                json_extract(raw_json, '$.totals.delivery.amount'), delivery_fee_minor),
+		  service_fee_minor  = COALESCE(json_extract(raw_json, '$.service_fee'),
+		                                json_extract(raw_json, '$.totals.service_fee.amount'), service_fee_minor),
+		  credits_minor      = COALESCE(json_extract(raw_json, '$.credits'),
+		                                json_extract(raw_json, '$.totals.credits.amount'),  credits_minor),
+		  tokens_minor       = COALESCE(json_extract(raw_json, '$.tokens'),
+		                                json_extract(raw_json, '$.totals.tokens.amount'),   tokens_minor),
+		  venue_country      = COALESCE(json_extract(raw_json, '$.venue_country'),
+		                                json_extract(raw_json, '$.venue.country'),          venue_country),
+		  venue_address      = COALESCE(json_extract(raw_json, '$.venue_full_address'),
+		                                json_extract(raw_json, '$.venue_address'),
+		                                json_extract(raw_json, '$.venue.address'),          venue_address),
+		  payment_provider   = COALESCE(json_extract(raw_json, '$.payments[0].method.provider'),
+		                                json_extract(raw_json, '$.payments[0].provider'),   payment_provider),
+		  payment_method_type= COALESCE(json_extract(raw_json, '$.payments[0].method.type'),
+		                                json_extract(raw_json, '$.payments[0].method_type'), payment_method_type)
+		WHERE total_amount_minor = 0
+		  AND COALESCE(json_extract(raw_json, '$.total_price'), 0) > 0
+	`)
+	if err != nil {
+		return err
+	}
+	_, err = db.ExecContext(ctx, `UPDATE orders SET fees_minor = delivery_fee_minor + service_fee_minor WHERE fees_minor <> delivery_fee_minor + service_fee_minor`)
+	return err
 }
 
 // upsertUser writes the canonical user row.
@@ -247,7 +294,6 @@ func upsertOrderCatalogEntry(ctx context.Context, tx *sql.Tx, userID, purchaseID
 // It mirrors the Node script's upsertOrderBundle: it INSERT/UPSERTs the
 // orders row, then replaces all child rows (items, options, payments).
 func upsertOrderBundle(ctx context.Context, tx *sql.Tx, userID, purchaseID string, summary, detail map[string]any, now time.Time) error {
-	totals := asMap(detail["totals"])
 	payments := asSlice(detail["payments"])
 	var primaryPayment map[string]any
 	if len(payments) > 0 {
@@ -298,16 +344,22 @@ func upsertOrderBundle(ctx context.Context, tx *sql.Tx, userID, purchaseID strin
 	}
 	iso := now.UTC().Format(time.RFC3339)
 
+	// Wolt returns money fields as flat top-level integers ("total_price",
+	// "items_price", "delivery_price", "service_fee", "credits", "tokens",
+	// "subtotal") with the venue address/country also flat ("venue_address",
+	// "venue_country"). The older nested totals.{key}.amount + venue.{key}
+	// shape only ever showed up in our test fixtures, so we read flat first
+	// and fall back to nested for backward compatibility.
 	venue := asMap(detail["venue"])
 	delivery := asMap(detail["delivery"])
 
-	venueName := nullableString(venue["name"])
+	venueName := firstNonNilString([]map[string]any{venue, summary}, "name", "venue_name")
 	if venueName == nil {
 		venueName = nullableString(summary["venue_name"])
 	}
 
-	deliveryFee := extractMinor(totals["delivery"])
-	serviceFee := extractMinor(totals["service_fee"])
+	deliveryFee := extractDetailMinor(detail, "delivery_price", "delivery")
+	serviceFee := extractDetailMinor(detail, "service_fee", "service_fee")
 
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO orders (
@@ -376,14 +428,14 @@ func upsertOrderBundle(ctx context.Context, tx *sql.Tx, userID, purchaseID strin
 		nullableString(detail["delivery_time"]),
 		nullableString(summary["received_at"]),
 		currency,
-		extractMinor(totals["total"]),
-		extractMinor(totals["subtotal"]),
-		extractMinor(totals["items"]),
+		extractDetailMinor(detail, "total_price", "total"),
+		extractDetailMinor(detail, "subtotal", "subtotal"),
+		extractDetailMinor(detail, "items_price", "items"),
 		deliveryFee,
 		serviceFee,
 		deliveryFee+serviceFee,
-		extractMinor(totals["credits"]),
-		extractMinor(totals["tokens"]),
+		extractDetailMinor(detail, "credits", "credits"),
+		extractDetailMinor(detail, "tokens", "tokens"),
 		sumCollectionAmounts(detail["discounts"]),
 		sumCollectionAmounts(detail["surcharges"]),
 		nullableString(detail["delivery_method"]),
@@ -391,12 +443,12 @@ func upsertOrderBundle(ctx context.Context, tx *sql.Tx, userID, purchaseID strin
 		nullableString(delivery["alias"]),
 		nullableString(venue["id"]),
 		venueName,
-		nullableString(venue["country"]),
-		nullableString(venue["address"]),
+		firstNonNilString([]map[string]any{detail, venue}, "venue_country", "country"),
+		firstNonNilString([]map[string]any{detail, venue}, "venue_full_address", "venue_address", "address"),
 		nullableString(venue["product_line"]),
 		itemSummary,
-		nullableStringFromMap(primaryPayment, "provider"),
-		nullableStringFromMap(primaryPayment, "method_type"),
+		paymentProvider(primaryPayment),
+		paymentMethodType(primaryPayment),
 		nullableStringFromMap(primaryPayment, "name"),
 		string(rawJSON),
 		iso,
@@ -427,9 +479,9 @@ func upsertOrderBundle(ctx context.Context, tx *sql.Tx, userID, purchaseID strin
 			userID,
 			purchaseID,
 			paymentIndex,
-			nullableString(payment["method_id"]),
-			nullableString(payment["provider"]),
-			nullableString(payment["method_type"]),
+			paymentMethodID(payment),
+			paymentProvider(payment),
+			paymentMethodType(payment),
 			nullableString(payment["name"]),
 			extractMinor(payment["amount"]),
 			nullableString(payment["payment_time"]),
@@ -459,7 +511,7 @@ func upsertOrderBundle(ctx context.Context, tx *sql.Tx, userID, purchaseID strin
 			itemName,
 			asInt(item["count"]),
 			extractMinor(item["price"]),
-			extractMinor(item["line_total"]),
+			itemLineTotal(item),
 		)
 		if err != nil {
 			return fmt.Errorf("statssync: insert item %d: %w", itemIndex, err)
@@ -675,4 +727,60 @@ func boolToInt(v bool) int {
 		return 1
 	}
 	return 0
+}
+
+// paymentProvider reads payment.method.provider with a fallback to the
+// flat payment.provider that older fixtures use. Wolt's real payload
+// nests it under method, e.g. payment.method.{provider: "edenred"}.
+func paymentProvider(payment map[string]any) interface{} {
+	if payment == nil {
+		return nil
+	}
+	if method := asMap(payment["method"]); method != nil {
+		if v := nullableString(method["provider"]); v != nil {
+			return v
+		}
+	}
+	return nullableString(payment["provider"])
+}
+
+// paymentMethodType reads payment.method.type with a fallback to the
+// flat payment.method_type.
+func paymentMethodType(payment map[string]any) interface{} {
+	if payment == nil {
+		return nil
+	}
+	if method := asMap(payment["method"]); method != nil {
+		if v := nullableString(method["type"]); v != nil {
+			return v
+		}
+	}
+	return nullableString(payment["method_type"])
+}
+
+// paymentMethodID reads payment.method.id with a fallback to the flat
+// payment.method_id.
+func paymentMethodID(payment map[string]any) interface{} {
+	if payment == nil {
+		return nil
+	}
+	if method := asMap(payment["method"]); method != nil {
+		if v := nullableString(method["id"]); v != nil {
+			return v
+		}
+	}
+	return nullableString(payment["method_id"])
+}
+
+// itemLineTotal picks the line-total field Wolt actually populates:
+// "end_amount" in the real payload, falling back to "line_total" used
+// by the legacy fixtures. Both are flat integers in minor units.
+func itemLineTotal(item map[string]any) int {
+	if item == nil {
+		return 0
+	}
+	if n := extractMinor(item["end_amount"]); n != 0 {
+		return n
+	}
+	return extractMinor(item["line_total"])
 }

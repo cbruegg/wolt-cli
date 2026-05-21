@@ -355,6 +355,186 @@ func TestSyncWithoutRefresherSurfaces401Directly(t *testing.T) {
 	}
 }
 
+func TestOpenStoreRepairsLegacyZeroAmounts(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "wolt.sqlite")
+	// Bootstrap the schema by opening once.
+	db1, err := openStore(context.Background(), dbPath)
+	if err != nil {
+		t.Fatalf("first open: %v", err)
+	}
+	// Seed a row that matches what the buggy version of statssync would
+	// have written: zero amounts but a valid raw_json carrying real Wolt
+	// flat fields. user_id FK requires a matching users row.
+	rawJSON := `{
+	    "total_price": 1609, "subtotal": 1609, "items_price": 2190,
+	    "delivery_price": 76, "service_fee": 76, "credits": 0, "tokens": 0,
+	    "venue_country": "FIN", "venue_address": "Piispansilta 10",
+	    "payments": [{"method": {"provider": "edenred", "type": "edenred"}}]
+	}`
+	_, _ = db1.Exec(`INSERT INTO users (id, email, created_at, updated_at) VALUES ('u1','u@example.com','2026-05-21T00:00:00Z','2026-05-21T00:00:00Z')`)
+	_, err = db1.Exec(`
+		INSERT INTO orders (
+		  user_id, purchase_id, status, payment_time_ts, currency,
+		  total_amount_minor, subtotal_minor, items_amount_minor,
+		  delivery_fee_minor, service_fee_minor, fees_minor,
+		  raw_json, synced_at
+		) VALUES ('u1', 'pX', 'delivered', 1716200000, 'EUR',
+		          0, 0, 0, 0, 0, 0, ?, '2026-05-21T00:00:00Z')`, rawJSON)
+	if err != nil {
+		t.Fatalf("seed legacy row: %v", err)
+	}
+	_ = db1.Close()
+
+	// Re-open: openStore runs repairLegacyZeroAmounts during init.
+	db2, err := openStore(context.Background(), dbPath)
+	if err != nil {
+		t.Fatalf("second open: %v", err)
+	}
+	defer func() { _ = db2.Close() }()
+
+	var total, items, delivery, service, fees int
+	var venueCountry, venueAddress, provider, methodType sql.NullString
+	row := db2.QueryRow(`
+		SELECT total_amount_minor, items_amount_minor, delivery_fee_minor,
+		       service_fee_minor, fees_minor, venue_country, venue_address,
+		       payment_provider, payment_method_type
+		FROM orders WHERE purchase_id = 'pX'`)
+	if err := row.Scan(&total, &items, &delivery, &service, &fees, &venueCountry, &venueAddress, &provider, &methodType); err != nil {
+		t.Fatalf("scan repaired row: %v", err)
+	}
+	if total != 1609 || items != 2190 || delivery != 76 || service != 76 || fees != 152 {
+		t.Fatalf("repair did not populate amounts — total=%d items=%d delivery=%d service=%d fees=%d", total, items, delivery, service, fees)
+	}
+	if venueCountry.String != "FIN" || venueAddress.String != "Piispansilta 10" {
+		t.Fatalf("repair did not populate venue — country=%q address=%q", venueCountry.String, venueAddress.String)
+	}
+	if provider.String != "edenred" || methodType.String != "edenred" {
+		t.Fatalf("repair did not populate payment — provider=%q type=%q", provider.String, methodType.String)
+	}
+
+	// Idempotent: re-running the repair must not change anything.
+	if err := repairLegacyZeroAmounts(context.Background(), db2); err != nil {
+		t.Fatalf("second repair: %v", err)
+	}
+	var totalAgain int
+	if err := db2.QueryRow(`SELECT total_amount_minor FROM orders WHERE purchase_id = 'pX'`).Scan(&totalAgain); err != nil {
+		t.Fatalf("scan after second repair: %v", err)
+	}
+	if totalAgain != 1609 {
+		t.Fatalf("second repair clobbered the value: got %d", totalAgain)
+	}
+}
+
+func TestSyncPersistsRealWoltAmountShape(t *testing.T) {
+	// Mirror the flat shape Wolt actually returns (total_price /
+	// items_price / delivery_price / service_fee as top-level ints,
+	// venue_country flat, payment.method.{provider,type} nested).
+	pages := []fakePage{{
+		Orders: []map[string]any{{
+			"purchase_id":     "wolt-real-1",
+			"payment_time_ts": 1716200000,
+			"currency":        "EUR",
+			"status":          "delivered",
+			"received_at":     "2026-05-20T10:00:00Z",
+			"items_summary":   "Edenred meal",
+			"venue_name":      "Burger King Iso Omena",
+		}},
+	}}
+	client := newFakeClient(pages)
+	client.detailByID = map[string]map[string]any{
+		"wolt-real-1": {
+			"order_number":   "WLT-EDEN-1",
+			"status":         "delivered",
+			"creation_time":  "20/05/2026, 17:33",
+			"delivery_time":  "20/05/2026, 18:10",
+			"currency":       "EUR",
+			"total_price":    1609,
+			"subtotal":       1609,
+			"items_price":    2190,
+			"delivery_price": 76,
+			"service_fee":    76,
+			"credits":        0,
+			"tokens":         0,
+			"venue_country":  "FIN",
+			"venue_address":  "Piispansilta 10",
+			"items": []any{
+				map[string]any{
+					"id":         "i1",
+					"name":       "Whopper Meal",
+					"count":      1.0,
+					"price":      2190,
+					"end_amount": 2190,
+				},
+			},
+			"payments": []any{
+				map[string]any{
+					"name":   "Edenred",
+					"amount": 1609,
+					"method": map[string]any{
+						"id":       "edenred-uuid",
+						"provider": "edenred",
+						"type":     "edenred",
+					},
+				},
+			},
+			"discounts": []any{
+				map[string]any{"amount": 657, "title": "Discounts"},
+			},
+		},
+	}
+
+	dbPath := filepath.Join(t.TempDir(), "wolt.sqlite")
+	if _, err := Sync(context.Background(), client, Options{
+		DBPath:    dbPath,
+		UserEmail: "user@example.com",
+		PageSize:  50,
+		RateLimit: time.Millisecond,
+		Now:       fixedClock(),
+	}); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open verify db: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	var (
+		total, subtotal, items, delivery, service, fees, discount int
+		venueCountry, venueAddress, paymentProvider, paymentType  sql.NullString
+	)
+	row := db.QueryRow(`
+		SELECT total_amount_minor, subtotal_minor, items_amount_minor,
+		       delivery_fee_minor, service_fee_minor, fees_minor,
+		       discount_amount_minor, venue_country, venue_address,
+		       payment_provider, payment_method_type
+		FROM orders WHERE purchase_id = ?`, "wolt-real-1")
+	if err := row.Scan(&total, &subtotal, &items, &delivery, &service, &fees, &discount, &venueCountry, &venueAddress, &paymentProvider, &paymentType); err != nil {
+		t.Fatalf("scan orders row: %v", err)
+	}
+	if total != 1609 || subtotal != 1609 || items != 2190 || delivery != 76 || service != 76 || fees != 152 {
+		t.Fatalf("amounts mismatch — total=%d subtotal=%d items=%d delivery=%d service=%d fees=%d", total, subtotal, items, delivery, service, fees)
+	}
+	if discount != 657 {
+		t.Fatalf("discount want 657, got %d", discount)
+	}
+	if venueCountry.String != "FIN" || venueAddress.String != "Piispansilta 10" {
+		t.Fatalf("venue mismatch — country=%q address=%q", venueCountry.String, venueAddress.String)
+	}
+	if paymentProvider.String != "edenred" || paymentType.String != "edenred" {
+		t.Fatalf("payment mismatch — provider=%q method_type=%q", paymentProvider.String, paymentType.String)
+	}
+
+	var lineTotal int
+	if err := db.QueryRow(`SELECT line_total_minor FROM order_items WHERE purchase_id = ?`, "wolt-real-1").Scan(&lineTotal); err != nil {
+		t.Fatalf("scan order_items: %v", err)
+	}
+	if lineTotal != 2190 {
+		t.Fatalf("item line_total want 2190 (from end_amount), got %d", lineTotal)
+	}
+}
+
 func TestExtractMinorHandlesShapes(t *testing.T) {
 	cases := []struct {
 		name string
@@ -496,6 +676,9 @@ type fakeClient struct {
 	refreshErr       error
 	nextAccessToken  string
 	nextRefreshToken string
+	// detailByID overrides the canned detail payload for a given purchase
+	// ID. Used when a test needs a specific Wolt-shape payload.
+	detailByID map[string]map[string]any
 }
 
 func (f *fakeClient) Refresher(_ context.Context, refreshToken string, _ woltgateway.AuthContext) (woltgateway.TokenRefreshResult, error) {
@@ -580,6 +763,10 @@ func (f *fakeClient) OrderHistoryPurchase(_ context.Context, purchaseID string, 
 			URL:        "https://consumer-api.wolt.com/order-tracking-api/v1/order_history/purchase/" + purchaseID,
 			StatusCode: 401,
 		}
+	}
+	if override, ok := f.detailByID[purchaseID]; ok {
+		f.mu.Unlock()
+		return override, nil
 	}
 	f.mu.Unlock()
 	switch purchaseID {
