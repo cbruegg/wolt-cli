@@ -48,23 +48,36 @@ that drops "Popular stores", "Brands", and similar carousels.
   `Brands: K-Market · Musti ja Mirri · …`.
 - Same one-line treatment for any future non-venue carousel.
 
-### 4. Grocery deals section
+### 4. Grocery deals section — deferred (no upstream sample)
 
-Different shape (product-card carousel with `old_price` / `new_price`)
-that doesn't fit the venue row template.
+Speculative when written; the live `/v1/pages/front` endpoint that
+`wolt feed` consumes does **not** carry a product-card grocery-deals
+section in any sampled city (Helsinki, Warsaw, Krakow, Berlin, Prague,
+Athens, Tokyo, May 2026). The payload-wide template enum is
+`{hero, medium, square-title-bottom, venue, quicklink}` and the keys
+`old_price` / `new_price` / `original_price` / `discounted_price`
+don't appear anywhere in the response.
 
-- Own row template with columns **Item | Was | Now | Venue**.
-- Lives alongside the venue sections in `feed` output.
+Hypotheses for where the section actually lives:
+- A different endpoint — possibly `/v1/pages/grocery-deals` or a
+  Wolt-Market-specific page (the brand carousel at
+  `woltmarket-popular-brands:helsinki` hints at this).
+- Behind authentication — segmented to users with grocery order
+  history.
+- Removed / not yet shipped.
+
+Not implementing until a real sample payload exists. To revive: capture
+a populated payload, drop it under
+`internal/service/observability/testdata/feed-grocery-deals.json`, and
+revisit the design here. #2.1 (`venue_preview_items` + `badges_v2`) and
+#2.2 (brand carousels) ship without it and stand on their own.
 
 ## Scope and commit slicing
 
-Two-to-three commits:
-
-- **#2.1** — `venue_preview_items` + `badges_v2`. Headline visual
-  change, fits in one commit.
-- **#2.2** — Brands one-liner. Small follow-up.
-- **#2.3** — Grocery deals. Most code because of the separate row
-  shape.
+- **#2.1** — `venue_preview_items` + `badges_v2` (shipped, commit
+  `4d5cafa`).
+- **#2.2** — Brands one-liner (shipped, commit `ce4a041`).
+- **#2.3** — Grocery deals — deferred, see section 4 above.
 
 ## Tests
 

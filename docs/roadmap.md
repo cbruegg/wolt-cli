@@ -35,26 +35,26 @@ wipes it; `WOLT_SLUG_CACHE_PATH` overrides the location. Visible win:
 `wolt venue menu <slug> --query` dropped from ~790 ms cold to ~170 ms
 warm on the live Helsinki feed (4.6× faster).
 
-## Discovery enrichment beyond tagline + top offer
+## ~~Discovery enrichment beyond tagline + top offer~~ — mostly shipped
 
-`wolt feed` and `wolt venues` already surface `tagline` (from upstream
-`short_description`) and `top_offer` (preferring discount-variant
-promos). What's still missing from the same payload that we could
-surface without extra HTTP:
+`wolt feed` and `wolt venues` rows now also carry `menu_highlights[]`
+(from upstream `venue_preview_items`) and `badges[]` (from the newer
+`badges_v2` shape with icon + variant + text). The feed table prefixes
+the venue cell with a single-rune glyph derived from the badge icon
+(`+ Wolt+`, `% 20% off`, `⚡ Fast`) and renders a Highlights column by
+default; `wolt venues` keeps both behind `--show-highlights` to avoid
+wrapping on narrow terminals. `WOLT_BADGES_PLAIN=1` falls back to
+bracketed text.
 
-- **Menu preview items** when populated (`venue_preview_items`) — most
-  useful for sponsored / featured rows, often shows a flagship dish.
-- **`badges_v2`** with icons — currently we only read the legacy
-  `badges` array; the newer payload field carries iconographic hints
-  ("coupon-fill", "wolt-plus") we could render as ASCII prefixes.
-- **Brand carousels** ("Popular stores", "Brands" sections on the home
-  page) — currently `feed` skips non-venue sections; could render them
-  as a compact "Brands: K-Market · Musti ja Mirri · ..." line.
-- **Grocery deals** section — distinct shape (product-card carousel
-  with old/new prices), would need its own row template.
+Non-venue carousels ("Popular stores", "Restaurant categories", hero
+banners) used to be silently dropped — they now classify as
+`kind: "brands"` and render as a single-line summary
+`Wolt Market · K-Market · Lidl`. `--query` matches brand names too.
 
-See `docs/discovery-enrichment.md` for the detailed plan (field
-mapping, commit slicing, tests, risks, output-contract impact).
+Still open: a product-card **grocery deals** section with old/new
+prices. The unauthenticated `/v1/pages/front` payload doesn't carry
+one in any sampled city (May 2026 capture); deferred until a real
+sample payload surfaces. See `docs/discovery-enrichment.md` §4.
 
 ## Smarter `venue menu` discovery
 
