@@ -131,6 +131,13 @@ func runStats(cmd *cobra.Command, deps Dependencies, flags globalFlags, opts sta
 		email     string
 		syncStats *statssync.Result
 	)
+	// Always run schema + migration setup, even when the caller passes
+	// --no-sync. The legacy-data repair migration lives in openStore;
+	// skipping it would leave post-upgrade users staring at the same
+	// stale dashboard they came here to fix.
+	if err := statssync.EnsureSchema(ctx, dbPath); err != nil {
+		return emitError(cmd, format, profileName, flags.Locale, flags.Output, statsCodeEnvError, fmt.Sprintf("prepare stats database: %v", err))
+	}
 	if !opts.NoSync {
 		writeStep(progress, 2, totalSteps, "Syncing your Wolt order history")
 		auth := buildAuthContextWithProfile(ctx, deps, flags)

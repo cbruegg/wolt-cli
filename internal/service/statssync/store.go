@@ -256,6 +256,66 @@ func repairLegacyZeroAmounts(ctx context.Context, db *sql.DB) error {
 	`); err != nil {
 		return err
 	}
+	// order_payments rows have provider / method_type / method_id all NULL
+	// in pre-fix data because the code read flat payment.provider /
+	// payment.method_type / payment.method_id, but Wolt nests them under
+	// payment.method.{provider,type,id}. Backfill from raw_json using
+	// the stored payment_index — works for the primary payment AND any
+	// secondary ones (split tenders).
+	if _, err := db.ExecContext(ctx, `
+		UPDATE order_payments
+		SET
+		  provider = COALESCE(
+		    NULLIF(provider, ''),
+		    (SELECT json_extract(o.raw_json, '$.payments[' || order_payments.payment_index || '].method.provider')
+		       FROM orders o WHERE o.user_id = order_payments.user_id AND o.purchase_id = order_payments.purchase_id),
+		    (SELECT json_extract(o.raw_json, '$.payments[' || order_payments.payment_index || '].provider')
+		       FROM orders o WHERE o.user_id = order_payments.user_id AND o.purchase_id = order_payments.purchase_id)
+		  ),
+		  method_type = COALESCE(
+		    NULLIF(method_type, ''),
+		    (SELECT json_extract(o.raw_json, '$.payments[' || order_payments.payment_index || '].method.type')
+		       FROM orders o WHERE o.user_id = order_payments.user_id AND o.purchase_id = order_payments.purchase_id),
+		    (SELECT json_extract(o.raw_json, '$.payments[' || order_payments.payment_index || '].method_type')
+		       FROM orders o WHERE o.user_id = order_payments.user_id AND o.purchase_id = order_payments.purchase_id)
+		  ),
+		  method_id = COALESCE(
+		    NULLIF(method_id, ''),
+		    (SELECT json_extract(o.raw_json, '$.payments[' || order_payments.payment_index || '].method.id')
+		       FROM orders o WHERE o.user_id = order_payments.user_id AND o.purchase_id = order_payments.purchase_id),
+		    (SELECT json_extract(o.raw_json, '$.payments[' || order_payments.payment_index || '].method_id')
+		       FROM orders o WHERE o.user_id = order_payments.user_id AND o.purchase_id = order_payments.purchase_id)
+		  )
+		WHERE provider IS NULL OR provider = ''
+		   OR method_type IS NULL OR method_type = ''
+		   OR method_id IS NULL OR method_id = ''
+	`); err != nil {
+		return err
+	}
+	// order_items.line_total_minor was always 0 in pre-fix rows because
+	// the code read item.line_total (a field Wolt never returns) instead
+	// of item.end_amount. Backfill from orders.raw_json using the stored
+	// item_index. Falls back to unit_price * quantity when the JSON path
+	// also misses (e.g., synthetic / partial rows).
+	if _, err := db.ExecContext(ctx, `
+		UPDATE order_items
+		SET line_total_minor = COALESCE(
+		  NULLIF(line_total_minor, 0),
+		  (SELECT json_extract(o.raw_json, '$.items[' || order_items.item_index || '].end_amount')
+		     FROM orders o
+		     WHERE o.user_id = order_items.user_id
+		       AND o.purchase_id = order_items.purchase_id),
+		  (SELECT json_extract(o.raw_json, '$.items[' || order_items.item_index || '].line_total')
+		     FROM orders o
+		     WHERE o.user_id = order_items.user_id
+		       AND o.purchase_id = order_items.purchase_id),
+		  unit_price_minor * COALESCE(NULLIF(quantity, 0), 1),
+		  0
+		)
+		WHERE line_total_minor = 0
+	`); err != nil {
+		return err
+	}
 	_, err := db.ExecContext(ctx, `UPDATE orders SET fees_minor = delivery_fee_minor + service_fee_minor WHERE fees_minor <> delivery_fee_minor + service_fee_minor`)
 	return err
 }

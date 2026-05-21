@@ -355,6 +355,139 @@ func TestSyncWithoutRefresherSurfaces401Directly(t *testing.T) {
 	}
 }
 
+func TestOpenStoreRepairsLegacyItemsAndPayments(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "wolt.sqlite")
+	db1, err := openStore(context.Background(), dbPath)
+	if err != nil {
+		t.Fatalf("first open: %v", err)
+	}
+	// Pre-fix payload shape — same as what real Wolt returns.
+	rawJSON := `{
+	    "total_price": 1609, "subtotal": 1609, "items_price": 2190,
+	    "delivery_price": 76, "service_fee": 76,
+	    "venue_id": "v1", "venue_country": "FIN",
+	    "items": [
+	      {"id": "i1", "name": "Whopper", "count": 1, "price": 990, "end_amount": 990},
+	      {"id": "i2", "name": "Fries L", "count": 1, "price": 600, "end_amount": 600},
+	      {"id": "i3", "name": "Cutlery", "count": 1, "price": 0, "end_amount": 0}
+	    ],
+	    "payments": [
+	      {"name": "Edenred", "amount": 1609, "method": {"id": "edenred-uuid", "provider": "edenred", "type": "edenred"}}
+	    ]
+	}`
+	_, _ = db1.Exec(`INSERT INTO users (id, email, created_at, updated_at) VALUES ('u1','u@example.com','2026-05-21T00:00:00Z','2026-05-21T00:00:00Z')`)
+	if _, err := db1.Exec(`
+		INSERT INTO orders (
+		  user_id, purchase_id, status, payment_time_ts, currency,
+		  total_amount_minor, subtotal_minor, items_amount_minor,
+		  delivery_fee_minor, service_fee_minor, fees_minor,
+		  raw_json, synced_at
+		) VALUES ('u1','pX','delivered',1716200000,'EUR',1609,1609,2190,76,76,152, ?, '2026-05-21T00:00:00Z')`, rawJSON); err != nil {
+		t.Fatalf("seed order: %v", err)
+	}
+	// Seed pre-fix child rows: line_total=0 for every item, payments with
+	// blank provider/type/id (mirrors what the buggy version wrote).
+	for i, p := range []struct {
+		name  string
+		count int
+		price int
+	}{
+		{"Whopper", 1, 990},
+		{"Fries L", 1, 600},
+		{"Cutlery", 1, 0},
+	} {
+		if _, err := db1.Exec(`
+			INSERT INTO order_items (user_id, purchase_id, item_index, item_name,
+			                         quantity, unit_price_minor, line_total_minor)
+			VALUES ('u1','pX',?,?,?,?,0)`, i, p.name, p.count, p.price); err != nil {
+			t.Fatalf("seed item %d: %v", i, err)
+		}
+	}
+	if _, err := db1.Exec(`
+		INSERT INTO order_payments (user_id, purchase_id, payment_index, amount_minor)
+		VALUES ('u1','pX',0,1609)`); err != nil {
+		t.Fatalf("seed payment: %v", err)
+	}
+	_ = db1.Close()
+
+	// Re-open: openStore runs repairLegacyZeroAmounts again.
+	db2, err := openStore(context.Background(), dbPath)
+	if err != nil {
+		t.Fatalf("second open: %v", err)
+	}
+	defer func() { _ = db2.Close() }()
+
+	// Items: line_total_minor backfilled from end_amount.
+	rows, err := db2.Query(`SELECT item_name, line_total_minor FROM order_items WHERE purchase_id='pX' ORDER BY item_index`)
+	if err != nil {
+		t.Fatalf("scan items: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	want := map[string]int{"Whopper": 990, "Fries L": 600, "Cutlery": 0}
+	for rows.Next() {
+		var name string
+		var lt int
+		if err := rows.Scan(&name, &lt); err != nil {
+			t.Fatalf("scan row: %v", err)
+		}
+		if lt != want[name] {
+			t.Errorf("item %q: want line_total %d, got %d", name, want[name], lt)
+		}
+	}
+
+	// Payments: provider/method_type/method_id all populated from method.*.
+	var provider, methodType, methodID sql.NullString
+	if err := db2.QueryRow(`SELECT provider, method_type, method_id FROM order_payments WHERE purchase_id='pX'`).Scan(&provider, &methodType, &methodID); err != nil {
+		t.Fatalf("scan payment: %v", err)
+	}
+	if provider.String != "edenred" {
+		t.Errorf("provider: want edenred, got %q", provider.String)
+	}
+	if methodType.String != "edenred" {
+		t.Errorf("method_type: want edenred, got %q", methodType.String)
+	}
+	if methodID.String != "edenred-uuid" {
+		t.Errorf("method_id: want edenred-uuid, got %q", methodID.String)
+	}
+}
+
+func TestEnsureSchemaRunsRepairWithoutSync(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "wolt.sqlite")
+	// Bootstrap schema, then seed a single broken row.
+	db1, err := openStore(context.Background(), dbPath)
+	if err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	_, _ = db1.Exec(`INSERT INTO users (id, email, created_at, updated_at) VALUES ('u1','u@example.com','2026-05-21','2026-05-21')`)
+	if _, err := db1.Exec(`
+		INSERT INTO orders (user_id, purchase_id, status, payment_time_ts, currency,
+		                    total_amount_minor, subtotal_minor, items_amount_minor,
+		                    delivery_fee_minor, service_fee_minor, fees_minor,
+		                    raw_json, synced_at)
+		VALUES ('u1','pY','delivered',1716200000,'EUR',0,0,0,0,0,0,
+		        '{"total_price":2500}','2026-05-21')`); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	_ = db1.Close()
+
+	if err := EnsureSchema(context.Background(), dbPath); err != nil {
+		t.Fatalf("EnsureSchema: %v", err)
+	}
+
+	db2, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("verify open: %v", err)
+	}
+	defer func() { _ = db2.Close() }()
+	var total int
+	if err := db2.QueryRow(`SELECT total_amount_minor FROM orders WHERE purchase_id='pY'`).Scan(&total); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if total != 2500 {
+		t.Fatalf("EnsureSchema should run repair: want total=2500, got %d", total)
+	}
+}
+
 func TestOpenStoreRepairsLegacyZeroAmounts(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "wolt.sqlite")
 	// Bootstrap the schema by opening once.

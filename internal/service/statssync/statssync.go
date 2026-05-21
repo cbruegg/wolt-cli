@@ -105,6 +105,20 @@ type Result struct {
 	DurationMs        int64  `json:"duration_ms"`
 }
 
+// EnsureSchema opens the SQLite at dbPath solely to apply the schema
+// and the idempotent legacy-data repair migration, then closes it.
+// Useful when the caller wants the dashboard to read a fully-migrated
+// DB without running the (potentially long) catalog + detail sync —
+// for example, "wolt stats --no-sync" needs this so post-upgrade
+// users see backfilled amounts even before they re-sync.
+func EnsureSchema(ctx context.Context, dbPath string) error {
+	db, err := openStore(ctx, dbPath)
+	if err != nil {
+		return err
+	}
+	return db.Close()
+}
+
 // Sync runs the catalog + detail phases, returning a Result describing
 // what changed. Sync writes incrementally; if ctx is cancelled mid-run the
 // already-committed transactions remain on disk and a subsequent call
