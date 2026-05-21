@@ -2,7 +2,10 @@ package wolt
 
 import (
 	"fmt"
+	"net/http"
+	"strconv"
 	"strings"
+	"time"
 )
 
 const maxErrorBodyPreview = 800
@@ -14,6 +17,10 @@ type UpstreamRequestError struct {
 	StatusCode int
 	Body       string
 	Cause      error
+	// RetryAfter, when > 0, is the server-suggested delay parsed from the
+	// Retry-After response header. Callers performing batch work (e.g. the
+	// stats sync) honor this hint before retrying on 429/503.
+	RetryAfter time.Duration
 }
 
 func (e *UpstreamRequestError) Error() string {
@@ -37,6 +44,29 @@ func (e *UpstreamRequestError) Error() string {
 
 func (e *UpstreamRequestError) Unwrap() error {
 	return ErrUpstream
+}
+
+// parseRetryAfter reads the Retry-After header per RFC 7231 §7.1.3.
+// Returns 0 when absent/unparseable. Accepts both delay-seconds and HTTP-date.
+func parseRetryAfter(h http.Header, now time.Time) time.Duration {
+	raw := strings.TrimSpace(h.Get("Retry-After"))
+	if raw == "" {
+		return 0
+	}
+	if seconds, err := strconv.Atoi(raw); err == nil {
+		if seconds <= 0 {
+			return 0
+		}
+		return time.Duration(seconds) * time.Second
+	}
+	if when, err := http.ParseTime(raw); err == nil {
+		delta := when.Sub(now)
+		if delta <= 0 {
+			return 0
+		}
+		return delta
+	}
+	return 0
 }
 
 func compactBodyPreview(body string) string {

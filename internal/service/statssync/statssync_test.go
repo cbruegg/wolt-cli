@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -192,6 +193,75 @@ func TestSyncForceFullRefetchesDetails(t *testing.T) {
 	}
 }
 
+func TestSyncRecoversFrom429DuringDetailPhase(t *testing.T) {
+	client := newFakeClient(twoOrderCorpus())
+	client.purchaseFailures = map[string]*purchaseFailureSpec{
+		"p1": {Remaining: 2, Status: 429, RetryAfter: 2 * time.Second},
+	}
+	sleeper := &recordingSleeper{}
+	dbPath := filepath.Join(t.TempDir(), "wolt.sqlite")
+
+	res, err := Sync(context.Background(), client, Options{
+		DBPath:    dbPath,
+		UserEmail: "user@example.com",
+		PageSize:  50,
+		RateLimit: time.Millisecond,
+		Now:       fixedClock(),
+		sleep:     sleeper.sleep,
+		backoff:   &backoffPolicy{MaxAttempts: 5, BaseDelay: time.Second, MaxDelay: 60 * time.Second},
+	})
+	if err != nil {
+		t.Fatalf("Sync should recover from 429, got %v", err)
+	}
+	if res.DetailsFetched != 2 {
+		t.Fatalf("expected 2 details after recovery, got %d", res.DetailsFetched)
+	}
+	if res.InsertedOrders != 2 {
+		t.Fatalf("expected 2 inserts after recovery, got %d", res.InsertedOrders)
+	}
+	if client.purchaseFailures["p1"].Remaining != 0 {
+		t.Fatalf("expected fake to have exhausted the 429 budget, %d remaining", client.purchaseFailures["p1"].Remaining)
+	}
+
+	// Two retries on p1 → exactly two backoff sleeps honoring Retry-After.
+	// Inter-call pacing sleeps (RateLimit=1ms) are also recorded; count only
+	// the >=Retry-After ones.
+	retrySleeps := 0
+	for _, d := range sleeper.durations {
+		if d >= 2*time.Second {
+			retrySleeps++
+		}
+	}
+	if retrySleeps != 2 {
+		t.Fatalf("expected 2 retry sleeps of 2s, got %v", sleeper.durations)
+	}
+}
+
+func TestSyncSurfacesResumableHintWhen429PersistsThroughBackoff(t *testing.T) {
+	client := newFakeClient(twoOrderCorpus())
+	client.purchaseFailures = map[string]*purchaseFailureSpec{
+		"p1": {Remaining: 1000, Status: 429},
+	}
+	sleeper := &recordingSleeper{}
+	dbPath := filepath.Join(t.TempDir(), "wolt.sqlite")
+
+	_, err := Sync(context.Background(), client, Options{
+		DBPath:    dbPath,
+		UserEmail: "user@example.com",
+		PageSize:  50,
+		RateLimit: time.Millisecond,
+		Now:       fixedClock(),
+		sleep:     sleeper.sleep,
+		backoff:   &backoffPolicy{MaxAttempts: 3, BaseDelay: time.Second, MaxDelay: 4 * time.Second},
+	})
+	if err == nil {
+		t.Fatal("expected Sync to surface persistent rate-limit error")
+	}
+	if !strings.Contains(err.Error(), "rerun \"wolt stats\"") {
+		t.Fatalf("expected resumable-rerun hint in error, got %q", err.Error())
+	}
+}
+
 func TestExtractMinorHandlesShapes(t *testing.T) {
 	cases := []struct {
 		name string
@@ -319,6 +389,16 @@ type fakeClient struct {
 	mu            sync.Mutex
 	listCalls     int
 	purchaseCalls int
+	// purchaseFailures lets a test inject N transient failures for a given
+	// purchase ID before the canned success payload is returned. Used to
+	// exercise the 429-retry path without forking the existing corpus.
+	purchaseFailures map[string]*purchaseFailureSpec
+}
+
+type purchaseFailureSpec struct {
+	Remaining  int
+	Status     int
+	RetryAfter time.Duration
 }
 
 func newFakeClient(pages []fakePage) *fakeClient {
@@ -365,6 +445,16 @@ func (f *fakeClient) OrderHistory(_ context.Context, _ woltgateway.AuthContext, 
 func (f *fakeClient) OrderHistoryPurchase(_ context.Context, purchaseID string, _ woltgateway.AuthContext) (map[string]any, error) {
 	f.mu.Lock()
 	f.purchaseCalls++
+	if spec, ok := f.purchaseFailures[purchaseID]; ok && spec.Remaining > 0 {
+		spec.Remaining--
+		f.mu.Unlock()
+		return nil, &woltgateway.UpstreamRequestError{
+			Method:     "GET",
+			URL:        "https://consumer-api.wolt.com/order-tracking-api/v1/order_history/purchase/" + purchaseID,
+			StatusCode: spec.Status,
+			RetryAfter: spec.RetryAfter,
+		}
+	}
 	f.mu.Unlock()
 	switch purchaseID {
 	case "p1":

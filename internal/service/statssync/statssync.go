@@ -24,8 +24,20 @@ import (
 // DefaultPageSize matches sync-wolt-history.mjs:40 and the Wolt API's max.
 const DefaultPageSize = 50
 
-// DefaultRateLimit matches scripts/lib/wolt-sync-runtime.mjs:3.
-const DefaultRateLimit = 650 * time.Millisecond
+// DefaultRateLimit is the inter-call gap. The Node implementation used 650ms
+// but observation against real Wolt shows ~1 in 5 detail fetches gets a 429
+// at that rate. 1.1s sustains ~0.9 req/s, which empirically clears the
+// per-token throttle while still finishing 1k orders in ~20min.
+const DefaultRateLimit = 1100 * time.Millisecond
+
+// MaxPacingExtra caps how much the adaptive pacer can add on top of
+// DefaultRateLimit when 429s happen. 5s + base 1.1s ≈ 6.1s per call;
+// beyond that we likely have a deeper problem than throttling.
+const MaxPacingExtra = 5 * time.Second
+
+// PacingBumpOn429 is how much each rate-limited response adds to the
+// adaptive extra delay for the remainder of the run.
+const PacingBumpOn429 = 500 * time.Millisecond
 
 // WoltClient is the slice of the wolt gateway statssync needs. The CLI
 // passes deps.Wolt directly; tests pass a fake.
@@ -53,6 +65,13 @@ type Options struct {
 	// Verbose enables per-page / per-order detail lines. Without it, only
 	// phase banners and a final summary are emitted.
 	Verbose bool
+	// sleep is the inter-call pacer and backoff sleeper. Tests override it
+	// to record requested durations without waiting. Production leaves it
+	// nil, which defaults to sleepCtx.
+	sleep func(context.Context, time.Duration) error
+	// backoff overrides the default 429/503 retry policy. Tests use this to
+	// keep MaxAttempts low; production uses the package default.
+	backoff *backoffPolicy
 }
 
 // Result summarises a Sync run. Field names match the JSON envelope the
@@ -114,6 +133,15 @@ func Sync(ctx context.Context, client WoltClient, opts Options) (Result, error) 
 	if clock == nil {
 		clock = time.Now
 	}
+	sleep := opts.sleep
+	if sleep == nil {
+		sleep = sleepCtx
+	}
+	backoff := defaultBackoff
+	if opts.backoff != nil {
+		backoff = *opts.backoff
+	}
+	pacer := newAdjustablePacer(rateLimit, PacingBumpOn429, MaxPacingExtra, opts.Progress)
 
 	db, err := openStore(ctx, opts.DBPath)
 	if err != nil {
@@ -157,10 +185,12 @@ func Sync(ctx context.Context, client WoltClient, opts Options) (Result, error) 
 		Mode:                 mode,
 		KnownPurchaseIDs:     knownIDs,
 		NewestKnownPaymentTs: newestKnown,
-		RateLimit:            rateLimit,
 		Clock:                clock,
 		Progress:             opts.Progress,
 		Verbose:              opts.Verbose,
+		Sleep:                sleep,
+		Backoff:              backoff,
+		Pacer:                pacer,
 	})
 	if err != nil {
 		return Result{}, err
@@ -170,10 +200,12 @@ func Sync(ctx context.Context, client WoltClient, opts Options) (Result, error) 
 	detail, err := runDetailPhase(ctx, client, db, opts.Auth, detailParams{
 		UserID:    userID,
 		ForceFull: opts.ForceFull,
-		RateLimit: rateLimit,
 		Clock:     clock,
 		Progress:  opts.Progress,
 		Verbose:   opts.Verbose,
+		Sleep:     sleep,
+		Backoff:   backoff,
+		Pacer:     pacer,
 	})
 	if err != nil {
 		return Result{}, err
@@ -261,10 +293,12 @@ type catalogParams struct {
 	Mode                 string
 	KnownPurchaseIDs     map[string]struct{}
 	NewestKnownPaymentTs int
-	RateLimit            time.Duration
 	Clock                func() time.Time
 	Progress             io.Writer
 	Verbose              bool
+	Sleep                func(context.Context, time.Duration) error
+	Backoff              backoffPolicy
+	Pacer                *adjustablePacer
 }
 
 type catalogResult struct {
@@ -281,17 +315,32 @@ func runCatalogPhase(ctx context.Context, client WoltClient, db *sql.DB, auth wo
 	)
 	incremental := p.Mode == "incremental"
 
+	sleep := p.Sleep
+	if sleep == nil {
+		sleep = sleepCtx
+	}
 	for {
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
-		if err := sleepCtx(ctx, p.RateLimit); err != nil {
+		if err := p.Pacer.wait(ctx, sleep); err != nil {
 			return result, err
 		}
-		page, err := client.OrderHistory(ctx, auth, woltgateway.OrderHistoryOptions{
-			Limit:     p.PageSize,
-			PageToken: nextPageToken,
-		})
+		pageNumber := result.PagesFetched + 1
+		page, err := callWithBackoff(
+			ctx,
+			func(ctx context.Context) (map[string]any, error) {
+				return client.OrderHistory(ctx, auth, woltgateway.OrderHistoryOptions{
+					Limit:     p.PageSize,
+					PageToken: nextPageToken,
+				})
+			},
+			sleep,
+			p.Backoff,
+			p.Pacer,
+			p.Progress,
+			fmt.Sprintf("order history page %d", pageNumber),
+		)
 		if err != nil {
 			return result, fmt.Errorf("statssync: order history list: %w", err)
 		}
@@ -377,10 +426,12 @@ func catalogStopDecision(summaries []any, known map[string]struct{}, newestKnown
 type detailParams struct {
 	UserID    string
 	ForceFull bool
-	RateLimit time.Duration
 	Clock     func() time.Time
 	Progress  io.Writer
 	Verbose   bool
+	Sleep     func(context.Context, time.Duration) error
+	Backoff   backoffPolicy
+	Pacer     *adjustablePacer
 }
 
 type detailResult struct {
@@ -406,23 +457,40 @@ func runDetailPhase(ctx context.Context, client WoltClient, db *sql.DB, auth wol
 	}
 
 	// Progress cadence: log every detail in --verbose, otherwise every 5%
-	// (or every 10 orders for short queues) so a 100-order sync feels
-	// alive without flooding the terminal.
+	// of the queue OR every 10 seconds, whichever comes first. The time
+	// floor is what keeps long throttle/backoff windows from looking like
+	// a hung process.
 	tick := len(queue) / 20
 	if tick < 10 {
 		tick = 10
 	}
+	const progressMaxGap = 10 * time.Second
+	lastProgressAt := p.Clock()
 
+	sleep := p.Sleep
+	if sleep == nil {
+		sleep = sleepCtx
+	}
 	for i, entry := range queue {
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
-		if err := sleepCtx(ctx, p.RateLimit); err != nil {
+		if err := p.Pacer.wait(ctx, sleep); err != nil {
 			return result, err
 		}
-		detail, err := client.OrderHistoryPurchase(ctx, entry.PurchaseID, auth)
+		detail, err := callWithBackoff(
+			ctx,
+			func(ctx context.Context) (map[string]any, error) {
+				return client.OrderHistoryPurchase(ctx, entry.PurchaseID, auth)
+			},
+			sleep,
+			p.Backoff,
+			p.Pacer,
+			p.Progress,
+			fmt.Sprintf("order detail %s (%d/%d)", entry.PurchaseID, i+1, len(queue)),
+		)
 		if err != nil {
-			return result, fmt.Errorf("statssync: order detail %s: %w", entry.PurchaseID, err)
+			return result, fmt.Errorf("statssync: order detail %s: %w (processed %d of %d so far; rerun \"wolt stats\" later to resume)", entry.PurchaseID, err, i, len(queue))
 		}
 		now := p.Clock().UTC()
 		if err := withTx(ctx, db, func(tx *sql.Tx) error {
@@ -439,10 +507,14 @@ func runDetailPhase(ctx context.Context, client WoltClient, db *sql.DB, auth wol
 		}
 
 		idx := i + 1
-		if p.Verbose {
+		nowWall := p.Clock()
+		switch {
+		case p.Verbose:
 			writeDetail(p.Progress, "  %d/%d %s", idx, len(queue), entry.PurchaseID)
-		} else if idx == 1 || idx == len(queue) || idx%tick == 0 {
+			lastProgressAt = nowWall
+		case idx == 1 || idx == len(queue) || idx%tick == 0 || nowWall.Sub(lastProgressAt) >= progressMaxGap:
 			writeDetail(p.Progress, "  %d/%d details fetched", idx, len(queue))
+			lastProgressAt = nowWall
 		}
 	}
 	return result, nil

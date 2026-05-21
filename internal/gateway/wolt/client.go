@@ -304,6 +304,7 @@ func (c *Client) doJSONRequest(ctx context.Context, method, rawURL string, param
 			URL:        rawURL,
 			StatusCode: res.StatusCode,
 			Body:       string(rawResponse),
+			RetryAfter: parseRetryAfter(res.Header, time.Now()),
 		}
 		c.traceRequestDone(method, rawURL, res.StatusCode, len(rawResponse), startedAt, upstreamErr)
 		return nil, upstreamErr
@@ -458,6 +459,7 @@ func readResponseBody(res *http.Response, method string, rawURL string) ([]byte,
 			URL:        rawURL,
 			StatusCode: res.StatusCode,
 			Body:       string(rawResponse),
+			RetryAfter: parseRetryAfter(res.Header, time.Now()),
 		}
 	}
 	return rawResponse, nil
