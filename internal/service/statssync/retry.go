@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -157,6 +158,85 @@ func isRateLimited(err error) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func isUnauthorized(err error) bool {
+	return statusOf(err) == 401
+}
+
+// callWithAuthAndBackoff wraps callWithBackoff with one mid-call auth
+// refresh: if the first cycle ends in 401, refreshAuth is invoked, the
+// underlying closure picks up the rotated tokens (the caller dereferences
+// a *AuthContext inside fn), and the full backoff cycle is re-run once
+// with the fresh credentials. refreshAuth may be nil — in that case 401
+// surfaces unchanged.
+func callWithAuthAndBackoff(
+	ctx context.Context,
+	fn func(context.Context) (map[string]any, error),
+	refreshAuth func(context.Context) error,
+	sleep func(context.Context, time.Duration) error,
+	policy backoffPolicy,
+	pacer *adjustablePacer,
+	progress io.Writer,
+	label string,
+) (map[string]any, error) {
+	payload, err := callWithBackoff(ctx, fn, sleep, policy, pacer, progress, label)
+	if err == nil {
+		return payload, nil
+	}
+	if !isUnauthorized(err) || refreshAuth == nil {
+		return nil, err
+	}
+	writeDetail(progress, "  %s received HTTP 401; refreshing access token", label)
+	if rerr := refreshAuth(ctx); rerr != nil {
+		return nil, fmt.Errorf("%s: upstream 401 and auth refresh failed: %w (original: %v)", label, rerr, err)
+	}
+	return callWithBackoff(ctx, fn, sleep, policy, pacer, progress, label)
+}
+
+// buildRefreshHook returns a closure suitable for catalogParams.RefreshAuth
+// / detailParams.RefreshAuth. Each invocation: swaps auth.RefreshToken via
+// refresher, mutates *auth in place with the new access (+ rotated refresh)
+// token, and forwards the new context to onRotated for disk persistence.
+// Returns nil — meaning "no refresh path available" — when either refresher
+// is nil or the supplied auth has no refresh token to use.
+func buildRefreshHook(
+	auth *woltgateway.AuthContext,
+	refresher Refresher,
+	onRotated func(woltgateway.AuthContext) error,
+	progress io.Writer,
+) func(context.Context) error {
+	if refresher == nil || auth == nil {
+		return nil
+	}
+	return func(ctx context.Context) error {
+		rt := ""
+		if auth != nil {
+			rt = strings.TrimSpace(auth.RefreshToken)
+		}
+		if rt == "" {
+			return fmt.Errorf("no refresh token available")
+		}
+		result, err := refresher(ctx, rt, *auth)
+		if err != nil {
+			return err
+		}
+		newAccess := strings.TrimSpace(result.AccessToken)
+		if newAccess == "" {
+			return fmt.Errorf("refresh response missing access token")
+		}
+		auth.WToken = newAccess
+		if newRefresh := strings.TrimSpace(result.RefreshToken); newRefresh != "" {
+			auth.RefreshToken = newRefresh
+		}
+		if onRotated != nil {
+			if perr := onRotated(*auth); perr != nil {
+				writeDetail(progress, "  warning: persisting rotated tokens failed: %v", perr)
+			}
+		}
+		writeDetail(progress, "  access token refreshed mid-sync")
+		return nil
 	}
 }
 

@@ -3,6 +3,7 @@ package statssync
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -262,6 +263,98 @@ func TestSyncSurfacesResumableHintWhen429PersistsThroughBackoff(t *testing.T) {
 	}
 }
 
+func TestSyncRefreshesAccessTokenOn401AndPersistsRotation(t *testing.T) {
+	client := newFakeClient(twoOrderCorpus())
+	client.rejectAccessToken = "expired-wt"
+	client.nextAccessToken = "fresh-wt"
+	client.nextRefreshToken = "rotated-rt"
+
+	var rotated []woltgateway.AuthContext
+	dbPath := filepath.Join(t.TempDir(), "wolt.sqlite")
+
+	res, err := Sync(context.Background(), client, Options{
+		DBPath:    dbPath,
+		UserEmail: "user@example.com",
+		PageSize:  50,
+		RateLimit: time.Millisecond,
+		Now:       fixedClock(),
+		Auth:      woltgateway.AuthContext{WToken: "expired-wt", RefreshToken: "old-rt"},
+		Refresher: client.Refresher,
+		OnAuthRotated: func(updated woltgateway.AuthContext) error {
+			rotated = append(rotated, updated)
+			return nil
+		},
+		sleep:   (&recordingSleeper{}).sleep,
+		backoff: &backoffPolicy{MaxAttempts: 3, BaseDelay: time.Second, MaxDelay: 10 * time.Second},
+	})
+	if err != nil {
+		t.Fatalf("Sync should recover from 401, got %v", err)
+	}
+	if res.DetailsFetched != 2 {
+		t.Fatalf("expected 2 details fetched after refresh, got %d", res.DetailsFetched)
+	}
+	if client.refreshCalls != 1 {
+		t.Fatalf("expected exactly 1 refresh call, got %d", client.refreshCalls)
+	}
+	if len(rotated) != 1 {
+		t.Fatalf("expected OnAuthRotated invoked once, got %d", len(rotated))
+	}
+	if rotated[0].WToken != "fresh-wt" || rotated[0].RefreshToken != "rotated-rt" {
+		t.Fatalf("OnAuthRotated saw unexpected context: %+v", rotated[0])
+	}
+}
+
+func TestSyncSurfaces401WhenRefresherFails(t *testing.T) {
+	client := newFakeClient(twoOrderCorpus())
+	client.rejectAccessToken = "expired-wt"
+	client.refreshErr = errors.New("refresh token revoked")
+
+	dbPath := filepath.Join(t.TempDir(), "wolt.sqlite")
+	_, err := Sync(context.Background(), client, Options{
+		DBPath:    dbPath,
+		UserEmail: "user@example.com",
+		PageSize:  50,
+		RateLimit: time.Millisecond,
+		Now:       fixedClock(),
+		Auth:      woltgateway.AuthContext{WToken: "expired-wt", RefreshToken: "old-rt"},
+		Refresher: client.Refresher,
+		sleep:     (&recordingSleeper{}).sleep,
+		backoff:   &backoffPolicy{MaxAttempts: 2, BaseDelay: time.Second, MaxDelay: 4 * time.Second},
+	})
+	if err == nil {
+		t.Fatal("expected Sync to surface the 401 + refresh failure")
+	}
+	if !strings.Contains(err.Error(), "refresh token revoked") {
+		t.Fatalf("expected refresher error in surfaced message, got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "401") {
+		t.Fatalf("expected mention of original 401, got %q", err.Error())
+	}
+}
+
+func TestSyncWithoutRefresherSurfaces401Directly(t *testing.T) {
+	client := newFakeClient(twoOrderCorpus())
+	client.rejectAccessToken = "expired-wt"
+
+	dbPath := filepath.Join(t.TempDir(), "wolt.sqlite")
+	_, err := Sync(context.Background(), client, Options{
+		DBPath:    dbPath,
+		UserEmail: "user@example.com",
+		PageSize:  50,
+		RateLimit: time.Millisecond,
+		Now:       fixedClock(),
+		Auth:      woltgateway.AuthContext{WToken: "expired-wt", RefreshToken: "old-rt"},
+		sleep:     (&recordingSleeper{}).sleep,
+		backoff:   &backoffPolicy{MaxAttempts: 2, BaseDelay: time.Second, MaxDelay: 4 * time.Second},
+	})
+	if err == nil {
+		t.Fatal("expected 401 to surface when no Refresher is wired")
+	}
+	if client.refreshCalls != 0 {
+		t.Fatalf("no refresher → no refresh calls; got %d", client.refreshCalls)
+	}
+}
+
 func TestExtractMinorHandlesShapes(t *testing.T) {
 	cases := []struct {
 		name string
@@ -389,10 +482,33 @@ type fakeClient struct {
 	mu            sync.Mutex
 	listCalls     int
 	purchaseCalls int
+	refreshCalls  int
 	// purchaseFailures lets a test inject N transient failures for a given
 	// purchase ID before the canned success payload is returned. Used to
 	// exercise the 429-retry path without forking the existing corpus.
 	purchaseFailures map[string]*purchaseFailureSpec
+	// rejectAccessToken, when non-empty, makes OrderHistoryPurchase return
+	// 401 whenever it sees this token. Exercises the 401-then-refresh path.
+	rejectAccessToken string
+	// refreshErr, when non-nil, is what the Refresher closure returns.
+	// Otherwise the Refresher swaps the access token to nextAccessToken
+	// (and refresh token to nextRefreshToken if set) and returns success.
+	refreshErr        error
+	nextAccessToken   string
+	nextRefreshToken  string
+}
+
+func (f *fakeClient) Refresher(_ context.Context, refreshToken string, _ woltgateway.AuthContext) (woltgateway.TokenRefreshResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.refreshCalls++
+	if f.refreshErr != nil {
+		return woltgateway.TokenRefreshResult{}, f.refreshErr
+	}
+	return woltgateway.TokenRefreshResult{
+		AccessToken:  f.nextAccessToken,
+		RefreshToken: f.nextRefreshToken,
+	}, nil
 }
 
 type purchaseFailureSpec struct {
@@ -442,7 +558,7 @@ func (f *fakeClient) OrderHistory(_ context.Context, _ woltgateway.AuthContext, 
 	return payload, nil
 }
 
-func (f *fakeClient) OrderHistoryPurchase(_ context.Context, purchaseID string, _ woltgateway.AuthContext) (map[string]any, error) {
+func (f *fakeClient) OrderHistoryPurchase(_ context.Context, purchaseID string, auth woltgateway.AuthContext) (map[string]any, error) {
 	f.mu.Lock()
 	f.purchaseCalls++
 	if spec, ok := f.purchaseFailures[purchaseID]; ok && spec.Remaining > 0 {
@@ -453,6 +569,16 @@ func (f *fakeClient) OrderHistoryPurchase(_ context.Context, purchaseID string, 
 			URL:        "https://consumer-api.wolt.com/order-tracking-api/v1/order_history/purchase/" + purchaseID,
 			StatusCode: spec.Status,
 			RetryAfter: spec.RetryAfter,
+		}
+	}
+	// Reject any access token the test marked as expired. Lets the
+	// 401-refresh test path force exactly one 401 before refresh.
+	if f.rejectAccessToken != "" && auth.WToken == f.rejectAccessToken {
+		f.mu.Unlock()
+		return nil, &woltgateway.UpstreamRequestError{
+			Method:     "GET",
+			URL:        "https://consumer-api.wolt.com/order-tracking-api/v1/order_history/purchase/" + purchaseID,
+			StatusCode: 401,
 		}
 	}
 	f.mu.Unlock()

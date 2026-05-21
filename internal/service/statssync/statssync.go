@@ -46,6 +46,12 @@ type WoltClient interface {
 	OrderHistoryPurchase(ctx context.Context, purchaseID string, auth woltgateway.AuthContext) (map[string]any, error)
 }
 
+// Refresher swaps a refresh token for a new access/refresh pair. The
+// CLI wires this to deps.Wolt.RefreshAccessToken; tests pass a fake.
+// Optional — when nil, statssync surfaces 401 responses directly
+// instead of refreshing.
+type Refresher func(ctx context.Context, refreshToken string, auth woltgateway.AuthContext) (woltgateway.TokenRefreshResult, error)
+
 // Options controls a single Sync run.
 type Options struct {
 	DBPath      string
@@ -65,6 +71,15 @@ type Options struct {
 	// Verbose enables per-page / per-order detail lines. Without it, only
 	// phase banners and a final summary are emitted.
 	Verbose bool
+	// Refresher, when non-nil, lets the sync swap an expired access token
+	// for a fresh one mid-run using the refresh token in Auth. The sync
+	// is long enough (hours, for large histories) that the original
+	// access token will expire before completion.
+	Refresher Refresher
+	// OnAuthRotated, when non-nil, is invoked with the new auth context
+	// after a successful refresh — production wires it to persist the
+	// rotated tokens so the next run starts with a valid pair.
+	OnAuthRotated func(woltgateway.AuthContext) error
 	// sleep is the inter-call pacer and backoff sleeper. Tests override it
 	// to record requested durations without waiting. Production leaves it
 	// nil, which defaults to sleepCtx.
@@ -143,6 +158,12 @@ func Sync(ctx context.Context, client WoltClient, opts Options) (Result, error) 
 	}
 	pacer := newAdjustablePacer(rateLimit, PacingBumpOn429, MaxPacingExtra, opts.Progress)
 
+	// authCtx is mutated in place when a refresh swaps the access token.
+	// runCatalogPhase / runDetailPhase pass a pointer down so the closures
+	// they hand to callWithAuthAndBackoff always see the latest value.
+	authCtx := opts.Auth
+	refreshAuth := buildRefreshHook(&authCtx, opts.Refresher, opts.OnAuthRotated, opts.Progress)
+
 	db, err := openStore(ctx, opts.DBPath)
 	if err != nil {
 		return Result{}, err
@@ -179,7 +200,7 @@ func Sync(ctx context.Context, client WoltClient, opts Options) (Result, error) 
 	if mode == "incremental" {
 		writeDetail(opts.Progress, "%d orders already known; scanning until we hit one of them", knownCount)
 	}
-	catalog, err := runCatalogPhase(ctx, client, db, opts.Auth, catalogParams{
+	catalog, err := runCatalogPhase(ctx, client, db, &authCtx, catalogParams{
 		UserID:               userID,
 		PageSize:             pageSize,
 		Mode:                 mode,
@@ -191,21 +212,23 @@ func Sync(ctx context.Context, client WoltClient, opts Options) (Result, error) 
 		Sleep:                sleep,
 		Backoff:              backoff,
 		Pacer:                pacer,
+		RefreshAuth:          refreshAuth,
 	})
 	if err != nil {
 		return Result{}, err
 	}
 	writeDetail(opts.Progress, "Catalog phase: %d pages, %d summaries scanned (%s)", catalog.PagesFetched, catalog.OrdersScanned, formatStopReason(catalog.StopReason))
 
-	detail, err := runDetailPhase(ctx, client, db, opts.Auth, detailParams{
-		UserID:    userID,
-		ForceFull: opts.ForceFull,
-		Clock:     clock,
-		Progress:  opts.Progress,
-		Verbose:   opts.Verbose,
-		Sleep:     sleep,
-		Backoff:   backoff,
-		Pacer:     pacer,
+	detail, err := runDetailPhase(ctx, client, db, &authCtx, detailParams{
+		UserID:      userID,
+		ForceFull:   opts.ForceFull,
+		Clock:       clock,
+		Progress:    opts.Progress,
+		Verbose:     opts.Verbose,
+		Sleep:       sleep,
+		Backoff:     backoff,
+		Pacer:       pacer,
+		RefreshAuth: refreshAuth,
 	})
 	if err != nil {
 		return Result{}, err
@@ -299,6 +322,7 @@ type catalogParams struct {
 	Sleep                func(context.Context, time.Duration) error
 	Backoff              backoffPolicy
 	Pacer                *adjustablePacer
+	RefreshAuth          func(context.Context) error
 }
 
 type catalogResult struct {
@@ -307,7 +331,7 @@ type catalogResult struct {
 	StopReason    string
 }
 
-func runCatalogPhase(ctx context.Context, client WoltClient, db *sql.DB, auth woltgateway.AuthContext, p catalogParams) (catalogResult, error) {
+func runCatalogPhase(ctx context.Context, client WoltClient, db *sql.DB, auth *woltgateway.AuthContext, p catalogParams) (catalogResult, error) {
 	var (
 		result        catalogResult
 		nextPageToken string
@@ -327,14 +351,15 @@ func runCatalogPhase(ctx context.Context, client WoltClient, db *sql.DB, auth wo
 			return result, err
 		}
 		pageNumber := result.PagesFetched + 1
-		page, err := callWithBackoff(
+		page, err := callWithAuthAndBackoff(
 			ctx,
 			func(ctx context.Context) (map[string]any, error) {
-				return client.OrderHistory(ctx, auth, woltgateway.OrderHistoryOptions{
+				return client.OrderHistory(ctx, *auth, woltgateway.OrderHistoryOptions{
 					Limit:     p.PageSize,
 					PageToken: nextPageToken,
 				})
 			},
+			p.RefreshAuth,
 			sleep,
 			p.Backoff,
 			p.Pacer,
@@ -424,14 +449,15 @@ func catalogStopDecision(summaries []any, known map[string]struct{}, newestKnown
 }
 
 type detailParams struct {
-	UserID    string
-	ForceFull bool
-	Clock     func() time.Time
-	Progress  io.Writer
-	Verbose   bool
-	Sleep     func(context.Context, time.Duration) error
-	Backoff   backoffPolicy
-	Pacer     *adjustablePacer
+	UserID      string
+	ForceFull   bool
+	Clock       func() time.Time
+	Progress    io.Writer
+	Verbose     bool
+	Sleep       func(context.Context, time.Duration) error
+	Backoff     backoffPolicy
+	Pacer       *adjustablePacer
+	RefreshAuth func(context.Context) error
 }
 
 type detailResult struct {
@@ -441,7 +467,7 @@ type detailResult struct {
 	Updated  int
 }
 
-func runDetailPhase(ctx context.Context, client WoltClient, db *sql.DB, auth woltgateway.AuthContext, p detailParams) (detailResult, error) {
+func runDetailPhase(ctx context.Context, client WoltClient, db *sql.DB, auth *woltgateway.AuthContext, p detailParams) (detailResult, error) {
 	queue, err := loadDetailQueue(ctx, db, p.UserID, p.ForceFull)
 	if err != nil {
 		return detailResult{}, err
@@ -478,11 +504,12 @@ func runDetailPhase(ctx context.Context, client WoltClient, db *sql.DB, auth wol
 		if err := p.Pacer.wait(ctx, sleep); err != nil {
 			return result, err
 		}
-		detail, err := callWithBackoff(
+		detail, err := callWithAuthAndBackoff(
 			ctx,
 			func(ctx context.Context) (map[string]any, error) {
-				return client.OrderHistoryPurchase(ctx, entry.PurchaseID, auth)
+				return client.OrderHistoryPurchase(ctx, entry.PurchaseID, *auth)
 			},
+			p.RefreshAuth,
 			sleep,
 			p.Backoff,
 			p.Pacer,

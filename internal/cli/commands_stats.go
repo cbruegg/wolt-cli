@@ -164,6 +164,10 @@ func runStats(cmd *cobra.Command, deps Dependencies, flags globalFlags, opts sta
 			ForceFull:   opts.Resync,
 			Progress:    progress,
 			Verbose:     flags.Verbose,
+			Refresher:   deps.Wolt.RefreshAccessToken,
+			OnAuthRotated: func(updated woltgateway.AuthContext) error {
+				return upsertProfileTokens(ctx, deps, profileName, updated.WToken, updated.RefreshToken)
+			},
 		})
 		if syncErr != nil {
 			return emitError(cmd, format, profileName, flags.Locale, flags.Output, statsCodeEnvError, syncErr.Error())
