@@ -186,9 +186,30 @@ wolt account favorites --limit 20
   in `wolt feed` as a single-line summary; `wolt feed --query <text>`
   matches against brand names as well as venues.
 
+## MCP server for AI clients
+
+`wolt-cli` ships a second binary, `wolt-mcp`, that exposes every read-only
+discovery and account flow (plus cart and checkout-preview) over the
+[Model Context Protocol](https://modelcontextprotocol.io). Wire it into
+Claude Desktop, Claude Code, Cursor, or any other MCP host and the AI gets a
+typed, schema-described tool surface for Wolt instead of having to shell out.
+
+```json
+{
+  "mcpServers": {
+    "wolt": { "command": "wolt-mcp" }
+  }
+}
+```
+
+Auth is shared with the CLI — log in once via `wolt login` and `wolt-mcp`
+inherits the same session. Full tool catalog and per-client setup steps:
+[`docs/mcp.md`](docs/mcp.md).
+
 ## Documentation
 
 - [`docs/commands.md`](docs/commands.md) — full command reference with flags and behavior
+- [`docs/mcp.md`](docs/mcp.md) — MCP server: tool catalog, client setup, troubleshooting
 - [`docs/output-contract.md`](docs/output-contract.md) — JSON/YAML envelope and per-command schemas
 - [`docs/discovery-enrichment.md`](docs/discovery-enrichment.md) — design notes on `venue_preview_items`, `badges_v2`, and brand carousels
 - [`docs/roadmap.md`](docs/roadmap.md) — upcoming ergonomics

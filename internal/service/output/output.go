@@ -117,10 +117,10 @@ func RenderTable(title string, headers []string, rows [][]string) string {
 	}
 	tw := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 	if len(headers) > 0 {
-		fmt.Fprintln(tw, strings.Join(headers, "\t"))
+		_, _ = fmt.Fprintln(tw, strings.Join(headers, "\t"))
 	}
 	for _, row := range rows {
-		fmt.Fprintln(tw, strings.Join(row, "\t"))
+		_, _ = fmt.Fprintln(tw, strings.Join(row, "\t"))
 	}
 	_ = tw.Flush()
 	return strings.TrimRight(b.String(), "\n")

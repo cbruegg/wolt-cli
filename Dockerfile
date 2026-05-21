@@ -7,14 +7,14 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o /out/wolt-cli ./cmd/wolt-cli && \
-    CGO_ENABLED=0 GOOS=linux go build -o /out/wolt ./cmd/wolt
+RUN CGO_ENABLED=0 GOOS=linux go build -o /out/wolt ./cmd/wolt && \
+    CGO_ENABLED=0 GOOS=linux go build -o /out/wolt-mcp ./cmd/wolt-mcp
 
 FROM alpine:3.22
 RUN addgroup -S app && adduser -S app -G app
 USER app
 WORKDIR /app
-COPY --from=builder /out/wolt-cli /usr/local/bin/wolt-cli
 COPY --from=builder /out/wolt /usr/local/bin/wolt
-ENTRYPOINT ["wolt-cli"]
+COPY --from=builder /out/wolt-mcp /usr/local/bin/wolt-mcp
+ENTRYPOINT ["wolt"]
 CMD ["--help"]

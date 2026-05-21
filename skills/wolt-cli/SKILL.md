@@ -103,8 +103,19 @@ instead of unrestricted full-catalog menu crawl.
 - `--format json|yaml` returns envelope keys: `meta`, `data`, `warnings`, optional `error`.
 - On upstream failures, rerun with `--verbose` to capture request trace and detailed diagnostics.
 
+## Driving Wolt via MCP
+
+If you're an AI agent running inside a host that speaks the Model Context
+Protocol (Claude Desktop, Claude Code, Cursor, …), prefer the `wolt-mcp`
+server tools (`wolt_feed`, `wolt_top`, `wolt_cart_show`, `wolt_cart_add`,
+`wolt_checkout_preview`, …) over shelling out to the CLI. They share the same
+auth state (`~/.wolt/.wolt-config.json`) and return typed, schema-described
+JSON instead of human-formatted tables. See `../docs/mcp.md` for the full
+catalog and client setup.
+
 ## References
 
 - Full command and flag matrix: `references/command-reference.md`
 - Reusable high-confidence workflows: `references/workflows.md`
 - Envelope/error parsing and automation notes: `references/output-and-errors.md`
+- MCP server tool catalog and setup: `../docs/mcp.md`

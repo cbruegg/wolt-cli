@@ -475,6 +475,43 @@ function Features() {
       ),
       cmd: '--address "Mannerheimintie 1, Helsinki"',
     },
+    {
+      icon: (
+        <svg viewBox="0 0 24 24">
+          <rect
+            x="3"
+            y="5"
+            width="18"
+            height="14"
+            rx="2"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+          />
+          <path
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M7 10l3 2-3 2M13 14h4"
+          />
+        </svg>
+      ),
+      title: <>MCP server for AI agents</>,
+      body: (
+        <>
+          The companion <code>wolt-mcp</code> binary speaks the{' '}
+          <a href="https://modelcontextprotocol.io" target="_blank" rel="noreferrer">
+            Model Context Protocol
+          </a>
+          . Wire it into Claude Desktop, Claude Code, or Cursor and the model
+          gets typed, schema-described tools for feed, search, cart, and
+          checkout-preview. Auth is shared with the CLI.
+        </>
+      ),
+      cmd: '{"mcpServers":{"wolt":{"command":"wolt-mcp"}}}',
+    },
   ];
 
   return (
@@ -722,6 +759,321 @@ function Commands() {
   );
 }
 
+function Agents() {
+  const agents: Array<{name: string; tag: string; body: ReactNode; icon: ReactNode; accent: string}> = [
+    {
+      name: 'Claude Code',
+      tag: 'Anthropic · CLI',
+      accent: 'cyan',
+      body: (
+        <>
+          Pipe <code>wolt feed --format json</code> straight into prompts. The
+          flag surface is small and stable enough for Claude to drive cart
+          building end-to-end without supervision.
+        </>
+      ),
+      icon: (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"
+          />
+        </svg>
+      ),
+    },
+    {
+      name: 'Claude Desktop',
+      tag: 'MCP-ready',
+      accent: 'blue',
+      body: (
+        <>
+          Predictable flags + structured JSON output read like a tool made for
+          MCP wrappers. Drop it in as a shell tool, or wrap a few commands in
+          your own tiny MCP server.
+        </>
+      ),
+      icon: (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="3" y="5" width="18" height="13" rx="2" fill="none" stroke="currentColor" strokeWidth="1.6" />
+          <path
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M8 21h8M12 18v3M8 11l2.5 2.5L15 9"
+          />
+        </svg>
+      ),
+    },
+    {
+      name: 'OpenClaw',
+      tag: 'self-hosted',
+      accent: 'orange',
+      body: (
+        <>
+          Drop a 5-line AgentSkill that shells out to <code>wolt</code>. The
+          Markdown personality model means scope, memory, and permissions sit
+          alongside your CLI calls — no glue code needed.
+        </>
+      ),
+      icon: (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M4 9c2-3 5-5 8-5s6 2 8 5M4 9c0 4 3 7 8 7s8-3 8-7M9 16v2a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-2M3 11l-1 2M21 11l1 2"
+          />
+          <circle cx="9.5" cy="9.5" r="0.9" fill="currentColor" />
+          <circle cx="14.5" cy="9.5" r="0.9" fill="currentColor" />
+        </svg>
+      ),
+    },
+    {
+      name: 'PicoClaw',
+      tag: '10 MB · MCP',
+      accent: 'pink',
+      body: (
+        <>
+          A 10 MB Go-binary AI agent meets a Go-binary CLI. Native MCP support
+          means you can wire <code>wolt</code> onto a Raspberry Pi or a $10
+          RISC-V board and drive carts from your sofa.
+        </>
+      ),
+      icon: (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="6" y="6" width="12" height="12" rx="2" fill="none" stroke="currentColor" strokeWidth="1.6" />
+          <path
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"
+          />
+          <circle cx="12" cy="12" r="2" fill="currentColor" />
+        </svg>
+      ),
+    },
+    {
+      name: 'Cursor',
+      tag: 'AI IDE',
+      accent: 'mono',
+      body: (
+        <>
+          Ask Cursor's Agent to drive <code>wolt cart add …</code> from the
+          chat side-panel. Tool calls land in your terminal exactly as a human
+          would type them.
+        </>
+      ),
+      icon: (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M5 3v18l5-5 3 7 2.6-1-3-7h6L5 3Z"
+          />
+        </svg>
+      ),
+    },
+    {
+      name: 'Cline',
+      tag: 'VS Code',
+      accent: 'green',
+      body: (
+        <>
+          Shell-first agent inside VS Code. Reads <code>wolt --help</code>{' '}
+          once, then drives discovery, cart, and checkout preview from the
+          chat panel.
+        </>
+      ),
+      icon: (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M5 7l5 5-5 5M13 17h7"
+          />
+        </svg>
+      ),
+    },
+    {
+      name: 'Codex CLI',
+      tag: 'OpenAI',
+      accent: 'cyan',
+      body: (
+        <>
+          OpenAI's shell-native coder. <code>wolt --format json | jq</code>{' '}
+          is exactly its native input — no glue code, no MCP server required
+          for the first script.
+        </>
+      ),
+      icon: (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="1.6" />
+          <path
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            d="M8.5 9l7 6M15.5 9l-7 6"
+          />
+        </svg>
+      ),
+    },
+    {
+      name: 'Aider',
+      tag: 'pair CLI',
+      accent: 'yellow',
+      body: (
+        <>
+          Pure-terminal pair-programmer. Point it at a repo and it'll read the
+          docs, scaffold a script, and run <code>wolt</code> to confirm the
+          shape of the output it just generated.
+        </>
+      ),
+      icon: (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.6" />
+          <circle cx="9" cy="11" r="1.3" fill="currentColor" />
+          <circle cx="15" cy="11" r="1.3" fill="currentColor" />
+          <path
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            d="M9 16c1 .8 2 1.2 3 1.2s2-.4 3-1.2"
+          />
+        </svg>
+      ),
+    },
+  ];
+
+  const {copiedKey, copy} = useCopy();
+  const demoText = [
+    '# 1. Discover',
+    'wolt venues --query ramen --sort rating --format json',
+    '',
+    '# 2. Read the menu',
+    'wolt venue menu <slug> --query tonkotsu --format json',
+    '',
+    '# 3. Build the cart by name',
+    'wolt cart add <slug> --query "Tonkotsu Ramen"',
+    'wolt cart add <slug> --query "Genmaicha"',
+    '',
+    '# 4. Preview the checkout (no order placed)',
+    'wolt checkout --format json',
+  ].join('\n');
+  const demoCopied = copiedKey === 'agents-demo';
+
+  return (
+    <section id="agents" className="agents">
+      <header className="section-head">
+        <span className="section-head__eyebrow">
+          <span className="section-head__pulse" aria-hidden="true" />
+          Works with your agent
+        </span>
+        <h2 className="section-head__title">
+          Drive wolt-cli from <span className="grad">your AI of choice.</span>
+        </h2>
+        <p className="section-head__lede">
+          One binary. <code>--format json</code> on every command. Predictable
+          flags. wolt-cli reads like a tool that was built to be driven by
+          agents — whether you're inside Claude Desktop, the lobster way with
+          OpenClaw and PicoClaw, or your favourite coding CLI.
+        </p>
+      </header>
+
+      <div className="agents__grid">
+        {agents.map((a) => (
+          <article key={a.name} className={`agent-card agent-card--${a.accent}`}>
+            <div className="agent-card__icon" aria-hidden="true">
+              {a.icon}
+            </div>
+            <div className="agent-card__body">
+              <div className="agent-card__head">
+                <h4>{a.name}</h4>
+                <span className="agent-card__tag">{a.tag}</span>
+              </div>
+              <p>{a.body}</p>
+            </div>
+          </article>
+        ))}
+      </div>
+
+      <div className="agents__why" aria-label="Why wolt-cli is agent-friendly">
+        <div className="agents__why-cell">
+          <span className="agents__why-k">Single binary</span>
+          <span className="agents__why-v">zero deps, any host the agent can shell into</span>
+        </div>
+        <div className="agents__why-cell">
+          <span className="agents__why-k">json / yaml on every command</span>
+          <span className="agents__why-v">deterministic parsing across lists, carts, and previews</span>
+        </div>
+        <div className="agents__why-cell">
+          <span className="agents__why-k">Stable --help surface</span>
+          <span className="agents__why-v">LLMs can read it once and remember the shape</span>
+        </div>
+        <div className="agents__why-cell">
+          <span className="agents__why-k">No telemetry</span>
+          <span className="agents__why-v">tokens stay local, nothing phones home</span>
+        </div>
+      </div>
+
+      <div className="agents__demo">
+        <header className="agents__demo-head">
+          <span className="agents__demo-eyebrow">Sample agent run</span>
+          <span className="agents__demo-tag">
+            "find me top-rated ramen and build a cart"
+          </span>
+        </header>
+        <div className="codeblock">
+          <pre>
+            <code>
+              <span className="tk-mut"># 1. Discover</span>{'\n'}
+              <span className="tk-fn">wolt</span> venues <span className="tk-fl">--query</span> ramen <span className="tk-fl">--sort</span> rating <span className="tk-fl">--format</span> json{'\n'}
+              {'\n'}
+              <span className="tk-mut"># 2. Read the menu</span>{'\n'}
+              <span className="tk-fn">wolt</span> venue menu &lt;slug&gt; <span className="tk-fl">--query</span> tonkotsu <span className="tk-fl">--format</span> json{'\n'}
+              {'\n'}
+              <span className="tk-mut"># 3. Build the cart by name</span>{'\n'}
+              <span className="tk-fn">wolt</span> cart add &lt;slug&gt; <span className="tk-fl">--query</span> <span className="tk-st">"Tonkotsu Ramen"</span>{'\n'}
+              <span className="tk-fn">wolt</span> cart add &lt;slug&gt; <span className="tk-fl">--query</span> <span className="tk-st">"Genmaicha"</span>{'\n'}
+              {'\n'}
+              <span className="tk-mut"># 4. Preview the checkout (no order placed)</span>{'\n'}
+              <span className="tk-fn">wolt</span> checkout <span className="tk-fl">--format</span> json
+            </code>
+          </pre>
+          <button
+            type="button"
+            className={`codeblock__copy${demoCopied ? ' is-copied' : ''}`}
+            onClick={() => copy('agents-demo', demoText)}>
+            {demoCopied ? 'Copied' : 'Copy'}
+          </button>
+        </div>
+        <p className="agents__demo-note">
+          The CLI is read-only by default and <strong>never</strong> places a
+          real order — agents can browse, build carts, and project totals
+          without spending your money. <code>wolt checkout</code> is a
+          preview.
+        </p>
+      </div>
+    </section>
+  );
+}
+
 function FAQ() {
   const qas: Array<{q: string; a: ReactNode; open?: boolean}> = [
     {
@@ -943,6 +1295,7 @@ export default function Home(): ReactNode {
         <Install />
         <Example />
         <Commands />
+        <Agents />
         <FAQ />
         <CTA />
         <Support />

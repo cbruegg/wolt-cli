@@ -68,23 +68,27 @@ func (s *Store) Load(_ context.Context) (domain.Config, error) {
 }
 
 func normalizeSingleAccountConfig(cfg domain.Config) (domain.Config, error) {
+	// Profiles[0] is the canonical in-memory representation; Account is the
+	// on-disk shape. After Load, both are populated and mirror each other. Any
+	// in-memory mutation goes through Profiles[0], so prefer it on Save —
+	// otherwise stale Account values would silently overwrite rotated tokens.
+	if len(cfg.Profiles) > 0 {
+		selected := cfg.Profiles[0]
+		for _, profile := range cfg.Profiles {
+			if profile.IsDefault {
+				selected = profile
+				break
+			}
+		}
+		selected.Name = "default"
+		selected.IsDefault = true
+		return domain.Config{Account: accountFromProfile(selected), Profiles: []domain.Profile{selected}}, nil
+	}
 	if accountHasData(cfg.Account) {
 		profile := profileFromAccount(cfg.Account)
 		return domain.Config{Account: accountFromProfile(profile), Profiles: []domain.Profile{profile}}, nil
 	}
-	if len(cfg.Profiles) == 0 {
-		return domain.Config{}, fmt.Errorf("%w: profiles is empty", ErrInvalidConfig)
-	}
-	selected := cfg.Profiles[0]
-	for _, profile := range cfg.Profiles {
-		if profile.IsDefault {
-			selected = profile
-			break
-		}
-	}
-	selected.Name = "default"
-	selected.IsDefault = true
-	return domain.Config{Account: accountFromProfile(selected), Profiles: []domain.Profile{selected}}, nil
+	return domain.Config{}, fmt.Errorf("%w: profiles is empty", ErrInvalidConfig)
 }
 
 // Save writes a configuration payload.

@@ -96,6 +96,7 @@ const config: Config = {
         },
         {to: '/#example', label: 'Example', position: 'left'},
         {to: '/#commands', label: 'Commands', position: 'left'},
+        {to: '/#agents', label: 'AI agents', position: 'left'},
         {to: '/#faq', label: 'FAQ', position: 'left'},
         {to: '/#support', label: 'Support', position: 'left'},
         {

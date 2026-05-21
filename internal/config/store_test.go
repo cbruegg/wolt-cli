@@ -168,6 +168,50 @@ func TestStoreLoadRoundTripsNewAccountOnly(t *testing.T) {
 	}
 }
 
+func TestStoreSavePersistsProfileMutationAfterLoad(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{
+		"account": {
+			"wtoken": "old-access",
+			"wrefresh_token": "old-refresh",
+			"cookies": ["__wtoken=old-access"],
+			"location": {"lat": 60.1, "lon": 24.9}
+		}
+	}`), 0o600); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+	store := &Store{path: path}
+
+	cfg, err := store.Load(context.Background())
+	if err != nil {
+		t.Fatalf("load seeded config: %v", err)
+	}
+	if cfg.Account.WToken != "old-access" || cfg.Profiles[0].WToken != "old-access" {
+		t.Fatalf("expected loaded account+profile mirror, got %+v / %+v", cfg.Account, cfg.Profiles[0])
+	}
+
+	// Simulate the auto-refresh path: mutate Profiles[0] only, mirroring how
+	// upsertProfileTokens applies the rotated tokens.
+	cfg.Profiles[0].WToken = "new-access"
+	cfg.Profiles[0].WRefreshToken = "new-refresh"
+
+	if err := store.Save(context.Background(), cfg); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	reloaded, err := store.Load(context.Background())
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if reloaded.Account.WToken != "new-access" {
+		t.Fatalf("expected rotated access token to persist, got %q", reloaded.Account.WToken)
+	}
+	if reloaded.Account.WRefreshToken != "new-refresh" {
+		t.Fatalf("expected rotated refresh token to persist, got %q", reloaded.Account.WRefreshToken)
+	}
+}
+
 func TestStoreSaveUsesOwnerOnlyPermissions(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")

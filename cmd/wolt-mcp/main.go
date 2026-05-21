@@ -1,0 +1,115 @@
+// Command wolt-mcp serves wolt-cli's functionality over the Model Context
+// Protocol so AI clients (Claude Desktop, Claude Code, Cursor, …) can drive
+// Wolt searches, view orders, manage baskets, and preview checkouts.
+//
+// Wire it into Claude Desktop / Claude Code with:
+//
+//	{ "mcpServers": { "wolt": { "command": "wolt-mcp" } } }
+//
+// The server shares ~/.wolt/.wolt-config.json with the wolt CLI binary — log
+// in once via `wolt login` and the MCP server inherits the same session.
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"log/slog"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/mekedron/wolt-cli/internal/config"
+	locationgateway "github.com/mekedron/wolt-cli/internal/gateway/location"
+	woltgateway "github.com/mekedron/wolt-cli/internal/gateway/wolt"
+	"github.com/mekedron/wolt-cli/internal/mcpserver"
+	"github.com/mekedron/wolt-cli/internal/service/profile"
+)
+
+var version = "dev"
+
+const (
+	defaultWoltHTTPMinInterval = 220 * time.Millisecond
+	woltHTTPMinIntervalEnv     = "WOLT_HTTP_MIN_INTERVAL_MS"
+)
+
+func main() {
+	// CRITICAL: stdout is the MCP JSON-RPC transport. Anything that lands on
+	// stdout outside of the SDK will corrupt the protocol. Force the stdlib
+	// `log` package and the default slog handler to stderr before any other
+	// init can fire a log line.
+	log.SetOutput(os.Stderr)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	slog.SetDefault(logger)
+
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "--version", "-v", "version":
+			fmt.Println(version)
+			return
+		case "--help", "-h", "help":
+			printHelp()
+			return
+		}
+	}
+
+	store, err := config.NewStore()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "wolt-mcp:", err)
+		os.Exit(1)
+	}
+
+	wolt := woltgateway.NewClient(
+		woltgateway.WithRequestMinInterval(resolveWoltRequestMinInterval()),
+	)
+
+	deps := mcpserver.Deps{
+		Wolt:     wolt,
+		Profiles: profile.NewResolver(store),
+		Location: locationgateway.NewClient(),
+		Config:   store,
+		Version:  version,
+		Logger:   logger,
+	}
+
+	srv := mcpserver.NewServer(deps)
+
+	logger.Info("wolt-mcp starting", "version", version, "config", store.Path())
+	if err := srv.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
+		logger.Error("wolt-mcp exited with error", "err", err)
+		os.Exit(1)
+	}
+}
+
+func printHelp() {
+	fmt.Println(strings.TrimSpace(`
+wolt-mcp — Model Context Protocol server for wolt-cli.
+
+Usage:
+  wolt-mcp              Run the MCP server over stdio.
+  wolt-mcp --version    Print version and exit.
+  wolt-mcp --help       Print this message and exit.
+
+Wire into an MCP client (Claude Desktop, Claude Code, Cursor) with:
+
+  { "mcpServers": { "wolt": { "command": "wolt-mcp" } } }
+
+Authentication is shared with the wolt CLI — run 'wolt login' once to enable
+the auth-gated tools (cart, favorites, account, checkout_preview).
+`))
+}
+
+func resolveWoltRequestMinInterval() time.Duration {
+	raw := strings.TrimSpace(os.Getenv(woltHTTPMinIntervalEnv))
+	if raw == "" {
+		return defaultWoltHTTPMinInterval
+	}
+	ms, err := strconv.Atoi(raw)
+	if err != nil || ms < 0 {
+		return defaultWoltHTTPMinInterval
+	}
+	return time.Duration(ms) * time.Millisecond
+}
