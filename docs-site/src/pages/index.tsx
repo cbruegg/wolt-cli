@@ -4,16 +4,20 @@ import Layout from '@theme/Layout';
 
 import './landing.css';
 
-type InstallTab = 'brew' | 'brew1' | 'src' | 'run';
+type InstallTab = 'brew' | 'releases' | 'src';
 
 const INSTALL_TABS: Array<{id: InstallTab; label: string; copy: string; code: ReactNode}> = [
   {
     id: 'brew',
     label: 'Homebrew',
-    copy: 'brew tap mekedron/tap\nbrew install wolt-cli',
+    copy: 'brew install mekedron/tap/wolt-cli',
     code: (
       <>
-        <span className="tk-mut"># Add the tap, then install</span>
+        <span className="tk-mut"># One-liner — tap is added implicitly</span>
+        {'\n'}
+        <span className="tk-fn">brew</span> install mekedron/tap/wolt-cli{'\n'}
+        {'\n'}
+        <span className="tk-mut"># Or add the tap first, then install:</span>
         {'\n'}
         <span className="tk-fn">brew</span> tap mekedron/tap{'\n'}
         <span className="tk-fn">brew</span> install wolt-cli
@@ -21,14 +25,23 @@ const INSTALL_TABS: Array<{id: InstallTab; label: string; copy: string; code: Re
     ),
   },
   {
-    id: 'brew1',
-    label: 'One-liner',
-    copy: 'brew install mekedron/tap/wolt-cli',
+    id: 'releases',
+    label: 'GitHub releases',
+    copy:
+      'curl -L -o wolt.tar.gz https://github.com/mekedron/wolt-cli/releases/latest/download/wolt_v1.1.0_darwin_arm64.tar.gz\ntar -xzf wolt.tar.gz\n./wolt --help',
     code: (
       <>
-        <span className="tk-mut"># Single command — tap is added implicitly</span>
+        <span className="tk-mut"># Pre-built binaries for macOS and Linux (amd64 + arm64).</span>
         {'\n'}
-        <span className="tk-fn">brew</span> install mekedron/tap/wolt-cli
+        <span className="tk-mut"># Browse: https://github.com/mekedron/wolt-cli/releases/latest</span>
+        {'\n'}
+        {'\n'}
+        <span className="tk-mut"># Example — macOS Apple Silicon (swap arch/tag for yours):</span>
+        {'\n'}
+        <span className="tk-fn">curl</span> -L -o wolt.tar.gz \{'\n'}
+        {'  '}https://github.com/mekedron/wolt-cli/releases/download/v1.1.0/wolt_v1.1.0_darwin_arm64.tar.gz{'\n'}
+        <span className="tk-fn">tar</span> -xzf wolt.tar.gz{'\n'}
+        ./wolt --help
       </>
     ),
   },
@@ -45,18 +58,6 @@ const INSTALL_TABS: Array<{id: InstallTab; label: string; copy: string; code: Re
         <span className="tk-fn">cd</span> wolt-cli{'\n'}
         <span className="tk-fn">go</span> build -o bin/wolt ./cmd/wolt{'\n'}
         ./bin/wolt --help
-      </>
-    ),
-  },
-  {
-    id: 'run',
-    label: 'Without install',
-    copy: 'go run ./cmd/wolt --help',
-    code: (
-      <>
-        <span className="tk-mut"># No checkout, no install — just run</span>
-        {'\n'}
-        <span className="tk-fn">go</span> run ./cmd/wolt --help
       </>
     ),
   },
@@ -510,8 +511,8 @@ function Install() {
         <span className="section-head__eyebrow">Install</span>
         <h2 className="section-head__title">One command. One binary.</h2>
         <p className="section-head__lede">
-          Homebrew is the recommended path. Building from source is a single{' '}
-          <code>go build</code>.
+          Homebrew is the recommended path. Pre-built binaries for macOS and
+          Linux ship on every <a href="https://github.com/mekedron/wolt-cli/releases/latest">GitHub release</a>, and building from source is a single <code>go build</code>.
         </p>
       </header>
 
