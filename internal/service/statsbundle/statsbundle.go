@@ -86,6 +86,11 @@ type EnsureOptions struct {
 	SkipUpdateCheck bool          // do not query the GitHub API; use cached state only
 	ThrottleAfter   time.Duration // override DefaultUpdateCheckTTL
 	Now             time.Time     // injectable clock for tests; defaults to time.Now()
+	// Progress, if non-nil, receives plain-text status lines so the user
+	// can watch what's happening on the console. Lines are prefixed with
+	// "==> " for phases and "    " for in-phase detail. The download bar
+	// uses carriage returns to redraw in place on a TTY.
+	Progress io.Writer
 }
 
 // Manager mediates between the on-disk cache and the GitHub releases feed.
@@ -228,29 +233,34 @@ func (m *Manager) EnsureBundle(ctx context.Context, opts EnsureOptions) (BundleI
 		if activeErr == nil && active.Version == pin {
 			return active, nil
 		}
+		writePhase(opts.Progress, "Fetching release metadata for %s", pin)
 		release, lookupErr := m.lookupRelease(ctx, pin, "")
 		if lookupErr != nil {
 			return BundleInfo{}, lookupErr
 		}
-		return m.installRelease(ctx, release, &state)
+		return m.installRelease(ctx, release, &state, opts.Progress)
 	}
 
 	if opts.SkipUpdateCheck {
 		if activeErr == nil {
+			writePhase(opts.Progress, "Using cached dashboard bundle %s (update check skipped)", active.Version)
 			return active, nil
 		}
 		return BundleInfo{}, fmt.Errorf("statsbundle: --no-check-updates set but no cached bundle exists: %w", activeErr)
 	}
 
 	if activeErr == nil && !state.LastCheckedAt.IsZero() && now.Sub(state.LastCheckedAt) < throttle {
+		writePhase(opts.Progress, "Using cached dashboard bundle %s (checked %s ago)", active.Version, humanDuration(now.Sub(state.LastCheckedAt)))
 		return active, nil
 	}
 
+	writePhase(opts.Progress, "Checking for newer dashboard bundle")
 	release, notModified, newETag, lookupErr := m.fetchLatestRelease(ctx, state.ETag)
 	if lookupErr != nil {
 		if activeErr == nil {
 			// Network or API hiccup but we have a cached bundle — log via
 			// state metadata, return cache.
+			writePhase(opts.Progress, "Release lookup failed (%v); using cached %s", lookupErr, active.Version)
 			return active, nil
 		}
 		return BundleInfo{}, fmt.Errorf("statsbundle: latest release lookup failed: %w", lookupErr)
@@ -262,6 +272,7 @@ func (m *Manager) EnsureBundle(ctx context.Context, opts EnsureOptions) (BundleI
 		}
 		_ = m.SaveState(state)
 		if activeErr == nil {
+			writePhase(opts.Progress, "Bundle %s is up to date", active.Version)
 			return active, nil
 		}
 		// 304 with no cache should never happen — guard anyway.
@@ -270,20 +281,26 @@ func (m *Manager) EnsureBundle(ctx context.Context, opts EnsureOptions) (BundleI
 	state.ETag = newETag
 	state.LastCheckedAt = now
 	if activeErr == nil && active.Version == release.Version {
+		writePhase(opts.Progress, "Bundle %s is up to date", active.Version)
 		_ = m.SaveState(state)
 		return active, nil
 	}
-	return m.installRelease(ctx, release, &state)
+	if activeErr == nil {
+		writePhase(opts.Progress, "Upgrading dashboard bundle %s -> %s", active.Version, release.Version)
+	} else {
+		writePhase(opts.Progress, "Installing dashboard bundle %s", release.Version)
+	}
+	return m.installRelease(ctx, release, &state, opts.Progress)
 }
 
 // installRelease downloads, verifies, and extracts the bundle asset, then
 // flips ActiveVersion. State is saved before returning.
-func (m *Manager) installRelease(ctx context.Context, release Release, state *State) (BundleInfo, error) {
+func (m *Manager) installRelease(ctx context.Context, release Release, state *State, progress io.Writer) (BundleInfo, error) {
 	if strings.TrimSpace(release.TarballURL) == "" {
 		return BundleInfo{}, ErrNoBundleAvailable
 	}
 	target := m.BundlePath(release.Version)
-	if err := m.downloadAndExtract(ctx, release, target); err != nil {
+	if err := m.downloadAndExtract(ctx, release, target, progress); err != nil {
 		return BundleInfo{}, err
 	}
 	state.ActiveVersion = release.Version
@@ -293,6 +310,7 @@ func (m *Manager) installRelease(ctx context.Context, release Release, state *St
 	if err := m.SaveState(*state); err != nil {
 		return BundleInfo{}, err
 	}
+	writePhase(progress, "Bundle %s ready at %s", release.Version, target)
 	return BundleInfo{
 		Version:    release.Version,
 		Path:       target,
@@ -301,7 +319,7 @@ func (m *Manager) installRelease(ctx context.Context, release Release, state *St
 	}, nil
 }
 
-func (m *Manager) downloadAndExtract(ctx context.Context, release Release, destDir string) error {
+func (m *Manager) downloadAndExtract(ctx context.Context, release Release, destDir string, progress io.Writer) error {
 	tmp, err := os.CreateTemp(m.StatsDir, "bundle-*.tar.gz")
 	if err != nil {
 		return fmt.Errorf("statsbundle: create tmp file: %w", err)
@@ -321,9 +339,22 @@ func (m *Manager) downloadAndExtract(ctx context.Context, release Release, destD
 		return fmt.Errorf("statsbundle: tarball download status %d", tarballResp.StatusCode)
 	}
 
+	totalBytes := tarballResp.ContentLength // -1 when server omits Content-Length
+	assetName := assetNameFromURL(release.TarballURL)
+	writeDetail(progress, "Downloading %s (%s)", assetName, humanBytes(totalBytes))
+
 	hasher := sha256.New()
 	limited := io.LimitReader(tarballResp.Body, MaxBundleBytes+1)
-	written, err := io.Copy(io.MultiWriter(tmp, hasher), limited)
+	progressed := &progressReader{
+		Reader: limited,
+		total:  totalBytes,
+		out:    progress,
+		// 50 ms is fast enough that the bar feels live, slow enough that
+		// we don't burn CPU on a tight redraw loop.
+		throttle: 50 * time.Millisecond,
+	}
+	written, err := io.Copy(io.MultiWriter(tmp, hasher), progressed)
+	progressed.finish() // always emit the final 100% line / newline
 	if err != nil {
 		return fmt.Errorf("statsbundle: write tarball: %w", err)
 	}
@@ -335,6 +366,7 @@ func (m *Manager) downloadAndExtract(ctx context.Context, release Release, destD
 	}
 
 	if strings.TrimSpace(release.ChecksumURL) != "" {
+		writeDetail(progress, "Verifying SHA256")
 		expected, err := m.fetchChecksum(ctx, release.ChecksumURL)
 		if err != nil {
 			return fmt.Errorf("statsbundle: fetch checksum: %w", err)
@@ -348,6 +380,7 @@ func (m *Manager) downloadAndExtract(ctx context.Context, release Release, destD
 	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
 		return fmt.Errorf("statsbundle: rewind tarball: %w", err)
 	}
+	writeDetail(progress, "Extracting bundle")
 	// Extract into a staging dir then atomically rename so a partial
 	// extract never leaves a half-written active bundle behind.
 	staging := destDir + ".staging"

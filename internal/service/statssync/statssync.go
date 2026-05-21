@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"strconv"
 	"strings"
@@ -45,6 +46,13 @@ type Options struct {
 	ForceFull   bool
 	RateLimit   time.Duration // sleep between Wolt calls; defaults to DefaultRateLimit
 	Now         func() time.Time
+	// Progress, if non-nil, receives plain-text status lines so users can
+	// watch the sync work through pages and orders. Lines are prefixed
+	// with "==> " for phases and "    " for in-phase detail.
+	Progress io.Writer
+	// Verbose enables per-page / per-order detail lines. Without it, only
+	// phase banners and a final summary are emitted.
+	Verbose bool
 }
 
 // Result summarises a Sync run. Field names match the JSON envelope the
@@ -139,6 +147,10 @@ func Sync(ctx context.Context, client WoltClient, opts Options) (Result, error) 
 		}
 	}
 
+	writePhase(opts.Progress, "Syncing order history for %s (%s mode)", email, mode)
+	if mode == "incremental" {
+		writeDetail(opts.Progress, "%d orders already known; scanning until we hit one of them", knownCount)
+	}
 	catalog, err := runCatalogPhase(ctx, client, db, opts.Auth, catalogParams{
 		UserID:               userID,
 		PageSize:             pageSize,
@@ -147,19 +159,29 @@ func Sync(ctx context.Context, client WoltClient, opts Options) (Result, error) 
 		NewestKnownPaymentTs: newestKnown,
 		RateLimit:            rateLimit,
 		Clock:                clock,
+		Progress:             opts.Progress,
+		Verbose:              opts.Verbose,
 	})
 	if err != nil {
 		return Result{}, err
 	}
+	writeDetail(opts.Progress, "Catalog phase: %d pages, %d summaries scanned (%s)", catalog.PagesFetched, catalog.OrdersScanned, formatStopReason(catalog.StopReason))
 
 	detail, err := runDetailPhase(ctx, client, db, opts.Auth, detailParams{
 		UserID:    userID,
 		ForceFull: opts.ForceFull,
 		RateLimit: rateLimit,
 		Clock:     clock,
+		Progress:  opts.Progress,
+		Verbose:   opts.Verbose,
 	})
 	if err != nil {
 		return Result{}, err
+	}
+	if detail.Queued == 0 {
+		writeDetail(opts.Progress, "Detail phase: no missing order details")
+	} else {
+		writeDetail(opts.Progress, "Detail phase: %d fetched (%d new, %d updated)", detail.Fetched, detail.Inserted, detail.Updated)
 	}
 
 	finishedAt := clock().UTC()
@@ -241,6 +263,8 @@ type catalogParams struct {
 	NewestKnownPaymentTs int
 	RateLimit            time.Duration
 	Clock                func() time.Time
+	Progress             io.Writer
+	Verbose              bool
 }
 
 type catalogResult struct {
@@ -277,6 +301,12 @@ func runCatalogPhase(ctx context.Context, client WoltClient, db *sql.DB, auth wo
 		}
 		result.PagesFetched++
 		result.OrdersScanned += len(summaries)
+
+		if p.Verbose {
+			writeDetail(p.Progress, "Catalog page %d: %d order summaries", result.PagesFetched, len(summaries))
+		} else {
+			writeDetail(p.Progress, "Catalog page %d: %d summaries (running total %d)", result.PagesFetched, len(summaries), result.OrdersScanned)
+		}
 
 		now := p.Clock().UTC()
 		if err := withTx(ctx, db, func(tx *sql.Tx) error {
@@ -349,6 +379,8 @@ type detailParams struct {
 	ForceFull bool
 	RateLimit time.Duration
 	Clock     func() time.Time
+	Progress  io.Writer
+	Verbose   bool
 }
 
 type detailResult struct {
@@ -367,12 +399,21 @@ func runDetailPhase(ctx context.Context, client WoltClient, db *sql.DB, auth wol
 	if len(queue) == 0 {
 		return result, nil
 	}
+	writeDetail(p.Progress, "Fetching %d order detail%s", len(queue), plural(len(queue)))
 	existing, err := loadKnownDetailedOrders(ctx, db, p.UserID)
 	if err != nil {
 		return detailResult{}, err
 	}
 
-	for _, entry := range queue {
+	// Progress cadence: log every detail in --verbose, otherwise every 5%
+	// (or every 10 orders for short queues) so a 100-order sync feels
+	// alive without flooding the terminal.
+	tick := len(queue) / 20
+	if tick < 10 {
+		tick = 10
+	}
+
+	for i, entry := range queue {
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
@@ -395,6 +436,13 @@ func runDetailPhase(ctx context.Context, client WoltClient, db *sql.DB, auth wol
 		} else {
 			result.Inserted++
 			existing[entry.PurchaseID] = struct{}{}
+		}
+
+		idx := i + 1
+		if p.Verbose {
+			writeDetail(p.Progress, "  %d/%d %s", idx, len(queue), entry.PurchaseID)
+		} else if idx == 1 || idx == len(queue) || idx%tick == 0 {
+			writeDetail(p.Progress, "  %d/%d details fetched", idx, len(queue))
 		}
 	}
 	return result, nil

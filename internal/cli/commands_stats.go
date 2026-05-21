@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -17,6 +18,16 @@ import (
 	"github.com/mekedron/wolt-cli/internal/service/statssync"
 	"github.com/spf13/cobra"
 )
+
+// writeStep prints a "[i/N] Title" banner with a blank line before it so
+// each phase visually separates from the previous one. No-op when w is nil
+// (JSON / YAML mode passes nil to keep stdout clean for the envelope).
+func writeStep(w io.Writer, step, total int, title string) {
+	if w == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "\n[%d/%d] %s\n", step, total, title)
+}
 
 const (
 	statsCodePrereqMissing     = "WOLT_STATS_PREREQ_MISSING"
@@ -81,6 +92,20 @@ func runStats(cmd *cobra.Command, deps Dependencies, flags globalFlags, opts sta
 		return emitError(cmd, format, profileName, flags.Locale, flags.Output, statsCodeEnvError, err.Error())
 	}
 
+	// Progress: stream phase + detail lines to stderr in table mode so the
+	// user sees what's happening during the long bundle download and sync.
+	// JSON / YAML mode stays clean — those consumers want a deterministic
+	// envelope, not a chatty log stream.
+	var progress io.Writer
+	totalSteps := 2 // bundle + serve
+	if !opts.NoSync {
+		totalSteps = 3 // bundle + sync + serve
+	}
+	if format == output.FormatTable {
+		progress = cmd.ErrOrStderr()
+	}
+
+	writeStep(progress, 1, totalSteps, "Resolving dashboard bundle")
 	warnings := []string{}
 
 	manager, err := statsbundle.New(statsDir)
@@ -91,6 +116,7 @@ func runStats(cmd *cobra.Command, deps Dependencies, flags globalFlags, opts sta
 	bundle, err := manager.EnsureBundle(ctx, statsbundle.EnsureOptions{
 		PinnedVersion:   strings.TrimSpace(opts.BundleVersion),
 		SkipUpdateCheck: opts.NoCheckUpdates,
+		Progress:        progress,
 	})
 	if err != nil {
 		return emitError(cmd, format, profileName, flags.Locale, flags.Output, statsCodeBundleUnavailable, err.Error())
@@ -106,6 +132,7 @@ func runStats(cmd *cobra.Command, deps Dependencies, flags globalFlags, opts sta
 		syncStats *statssync.Result
 	)
 	if !opts.NoSync {
+		writeStep(progress, 2, totalSteps, "Syncing your Wolt order history")
 		auth := buildAuthContextWithProfile(ctx, deps, flags)
 		if err := requireAuth(cmd, format, profileName, flags.Locale, flags.Output, auth); err != nil {
 			return err
@@ -135,6 +162,8 @@ func runStats(cmd *cobra.Command, deps Dependencies, flags globalFlags, opts sta
 			ProfileName: profileName,
 			Auth:        auth,
 			ForceFull:   opts.Resync,
+			Progress:    progress,
+			Verbose:     flags.Verbose,
 		})
 		if syncErr != nil {
 			return emitError(cmd, format, profileName, flags.Locale, flags.Output, statsCodeEnvError, syncErr.Error())
@@ -142,6 +171,8 @@ func runStats(cmd *cobra.Command, deps Dependencies, flags globalFlags, opts sta
 		syncStats = &res
 	}
 
+	serveStep := totalSteps
+	writeStep(progress, serveStep, totalSteps, "Starting dashboard server")
 	server, err := statsserve.Start(statsserve.Options{
 		BundleDir: bundle.Path,
 		DBPath:    dbPath,
@@ -149,6 +180,9 @@ func runStats(cmd *cobra.Command, deps Dependencies, flags globalFlags, opts sta
 	})
 	if err != nil {
 		return emitError(cmd, format, profileName, flags.Locale, flags.Output, statsCodeEnvError, err.Error())
+	}
+	if progress != nil {
+		_, _ = fmt.Fprintf(progress, "    Listening on %s\n", server.URL())
 	}
 
 	data := map[string]any{

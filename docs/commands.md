@@ -344,6 +344,17 @@ Failure modes:
 - `user.email` missing from `UserMe` → `WOLT_STATS_ENV_ERROR` with a
   "Run \"wolt login\" again" hint.
 
+Progress output (table mode only):
+
+- Every phase is announced as a `[i/N] Title` banner on stderr.
+- The bundle download draws an in-place progress bar with byte counts and
+  percentage, falling back to indeterminate when the server omits
+  `Content-Length`.
+- Sync emits one line per catalog page and a checkpoint every ~5 % of the
+  detail queue. Pass `--verbose` to log every individual order id.
+- `--format json` / `--format yaml` suppresses all progress — only the
+  final envelope lands on stdout, stderr stays clean.
+
 ## Global flags
 
 Available on every leaf command:

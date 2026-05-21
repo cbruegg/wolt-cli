@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -132,4 +133,18 @@ func TestBuildStatsTableContainsKeyFields(t *testing.T) {
 			t.Fatalf("expected table to contain %q, got:\n%s", needle, out)
 		}
 	}
+}
+
+func TestWriteStepFormatsBanner(t *testing.T) {
+	var buf bytes.Buffer
+	writeStep(&buf, 2, 3, "Syncing your Wolt order history")
+	want := "\n[2/3] Syncing your Wolt order history\n"
+	if buf.String() != want {
+		t.Fatalf("writeStep output mismatch:\nwant %q\ngot  %q", want, buf.String())
+	}
+}
+
+func TestWriteStepNilSinkIsNoOp(t *testing.T) {
+	// Should be safe to call with a nil writer (JSON / YAML mode).
+	writeStep(nil, 1, 3, "unused")
 }
