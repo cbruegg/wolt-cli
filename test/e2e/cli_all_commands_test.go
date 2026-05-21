@@ -399,6 +399,195 @@ func TestSearchVenuesTableIncludesSlug(t *testing.T) {
 	}
 }
 
+func TestSearchVenuesHighlightsOptInColumn(t *testing.T) {
+	venue := buildVenue("venue-1", "burger-place", "Burger Street")
+	venue.BadgesV2 = []domain.Badge{{Icon: "wolt-plus", Variant: "primary", Text: "Wolt+"}}
+	venue.PreviewItems = []any{map[string]any{"name": "Cheeseburger pizza", "formatted_price": "19.90 €"}}
+	items := []domain.Item{{Title: "Burger Place", TrackID: "1", Link: domain.Link{Target: "venue-1"}, Venue: venue}}
+
+	deps := cli.Dependencies{
+		Wolt: &mockWolt{
+			itemsFunc: func(context.Context, domain.Location) ([]domain.Item, error) {
+				return items, nil
+			},
+		},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 0, Lon: 0}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+
+	exitCodeDefault, outDefault := runCLIWithDeps(t, deps, "venues", "--query", "burger")
+	if exitCodeDefault != 0 {
+		t.Fatalf("expected exit 0 (default), got %d\noutput:\n%s", exitCodeDefault, outDefault)
+	}
+	if strings.Contains(outDefault, "Highlights") {
+		t.Fatalf("expected Highlights column hidden by default on venues, got:\n%s", outDefault)
+	}
+	if !strings.Contains(outDefault, "+ Burger Place") {
+		t.Fatalf("expected Wolt+ glyph prefix on venue cell, got:\n%s", outDefault)
+	}
+
+	exitCodeOn, outOn := runCLIWithDeps(t, deps, "venues", "--query", "burger", "--show-highlights")
+	if exitCodeOn != 0 {
+		t.Fatalf("expected exit 0 (--show-highlights), got %d\noutput:\n%s", exitCodeOn, outOn)
+	}
+	if !strings.Contains(outOn, "Highlights") {
+		t.Fatalf("expected Highlights column with --show-highlights, got:\n%s", outOn)
+	}
+	if !strings.Contains(outOn, "Cheeseburger pizza 19.90 €") {
+		t.Fatalf("expected highlight value in cell, got:\n%s", outOn)
+	}
+}
+
+func TestSearchVenuesBadgePlainModeFallback(t *testing.T) {
+	t.Setenv("WOLT_BADGES_PLAIN", "1")
+	venue := buildVenue("venue-1", "burger-place", "Burger Street")
+	venue.BadgesV2 = []domain.Badge{{Icon: "wolt-plus", Variant: "primary", Text: "Wolt+"}}
+	items := []domain.Item{{Title: "Burger Place", TrackID: "1", Link: domain.Link{Target: "venue-1"}, Venue: venue}}
+
+	deps := cli.Dependencies{
+		Wolt: &mockWolt{
+			itemsFunc: func(context.Context, domain.Location) ([]domain.Item, error) {
+				return items, nil
+			},
+		},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 0, Lon: 0}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+
+	exitCode, out := runCLIWithDeps(t, deps, "venues", "--query", "burger")
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
+	}
+	if !strings.Contains(out, "[Wolt+] Burger Place") {
+		t.Fatalf("expected plain-mode bracketed prefix, got:\n%s", out)
+	}
+}
+
+func TestFeedTableShowsHighlightsByDefault(t *testing.T) {
+	sections := []domain.Section{
+		{
+			Name:  "popular",
+			Title: "Popular",
+			Items: []domain.Item{
+				{
+					Title: "Featured Venue",
+					Link:  domain.Link{Target: "venue-1"},
+					Venue: &domain.Venue{
+						ID:               "venue-1",
+						Slug:             "featured",
+						Name:             "Featured Venue",
+						Currency:         "EUR",
+						DeliveryPriceInt: intPtr(0),
+						EstimateRange:    "10-20",
+						BadgesV2: []domain.Badge{
+							{Icon: "coupon-fill", Variant: "discount", Text: "20% off"},
+						},
+						PreviewItems: []any{map[string]any{"name": "Cheeseburger pizza", "formatted_price": "19.90 €"}},
+					},
+				},
+			},
+		},
+	}
+	deps := cli.Dependencies{
+		Wolt: &mockWolt{
+			sectionsFunc: func(context.Context, domain.Location) ([]domain.Section, error) {
+				return sections, nil
+			},
+		},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 60.1, Lon: 24.9}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+
+	exitCode, out := runCLIWithDeps(t, deps, "feed")
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
+	}
+	if !strings.Contains(out, "Highlights") {
+		t.Fatalf("expected Highlights column on feed by default, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Cheeseburger pizza 19.90 €") {
+		t.Fatalf("expected highlight value in cell, got:\n%s", out)
+	}
+	if !strings.Contains(out, "% Featured Venue") {
+		t.Fatalf("expected discount glyph prefix on venue cell, got:\n%s", out)
+	}
+
+	exitCodeOff, outOff := runCLIWithDeps(t, deps, "feed", "--show-highlights=false")
+	if exitCodeOff != 0 {
+		t.Fatalf("expected exit 0 with highlights off, got %d\noutput:\n%s", exitCodeOff, outOff)
+	}
+	if strings.Contains(outOff, "Highlights") {
+		t.Fatalf("expected Highlights column hidden when --show-highlights=false, got:\n%s", outOff)
+	}
+}
+
+func TestFeedJSONIncludesBadgesAndMenuHighlights(t *testing.T) {
+	sections := []domain.Section{
+		{
+			Name:  "popular",
+			Title: "Popular",
+			Items: []domain.Item{
+				{
+					Title: "Featured Venue",
+					Link:  domain.Link{Target: "venue-1"},
+					Venue: &domain.Venue{
+						ID:       "venue-1",
+						Slug:     "featured",
+						Currency: "EUR",
+						BadgesV2: []domain.Badge{{Icon: "wolt-plus", Variant: "primary", Text: "Wolt+"}},
+						PreviewItems: []any{
+							map[string]any{"name": "Cheeseburger pizza", "formatted_price": "19.90 €"},
+						},
+					},
+				},
+			},
+		},
+	}
+	deps := cli.Dependencies{
+		Wolt: &mockWolt{
+			sectionsFunc: func(context.Context, domain.Location) ([]domain.Section, error) {
+				return sections, nil
+			},
+		},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 60.1, Lon: 24.9}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+
+	exitCode, out := runCLIWithDeps(t, deps, "feed", "--format", "json")
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
+	}
+	payload := mustJSON(t, out)
+	data := asMapPayload(t, payload["data"])
+	sectionsOut := asSlicePayload(t, data["sections"])
+	row := asMapPayload(t, asSlicePayload(t, asMapPayload(t, sectionsOut[0])["items"])[0])
+
+	badges := asSlicePayload(t, row["badges"])
+	if len(badges) != 1 {
+		t.Fatalf("expected 1 badge, got %d", len(badges))
+	}
+	if asMapPayload(t, badges[0])["icon"] != "wolt-plus" {
+		t.Fatalf("expected wolt-plus icon, got %v", badges[0])
+	}
+
+	highlights := asSlicePayload(t, row["menu_highlights"])
+	if len(highlights) != 1 {
+		t.Fatalf("expected 1 highlight, got %d", len(highlights))
+	}
+	first := asMapPayload(t, highlights[0])
+	if first["name"] != "Cheeseburger pizza" || first["formatted_price"] != "19.90 €" {
+		t.Fatalf("unexpected highlight shape: %v", first)
+	}
+}
+
 func TestVenueMenuJSON(t *testing.T) {
 	staticPayload := map[string]any{
 		"venue": map[string]any{

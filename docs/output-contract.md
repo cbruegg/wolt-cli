@@ -136,7 +136,7 @@ items[]: {
   tagline, top_offer,
   rating, delivery_estimate, delivery_fee,
   price_range, price_range_scale,
-  promotions[], wolt_plus
+  promotions[], badges[], menu_highlights[], wolt_plus
 }
 
 # Pagination
@@ -149,6 +149,19 @@ prominent promo text — preference order: discount-variant promos, then
 any promo (excluding Wolt+ membership labels). Both come from the same
 front-page payload, no extra HTTP. With `--enrich`, `promotions` is
 backfilled with dynamic campaign banners.
+
+`badges[]: { icon, variant, text }` is sourced from upstream
+`badges_v2` and surfaces newer icon-bearing badges (`wolt-plus`,
+`coupon-fill`, `bike`, …). Empty array when upstream omits the field.
+The table renderer prefixes the venue cell with single-rune glyphs
+derived from `icon`; set `WOLT_BADGES_PLAIN=1` to fall back to
+bracketed text (e.g. `[Wolt+]`).
+
+`menu_highlights[]: { name, formatted_price }` is sourced from
+upstream `venue_preview_items` and lists flagship dishes for sponsored
+/ featured rows. Empty array when upstream omits the field. The
+`venues` table hides this column by default — pass `--show-highlights`
+to surface it.
 
 ### `wolt feed` — DiscoveryFeed
 
@@ -163,13 +176,15 @@ sections[]: {
     tagline, top_offer,
     rating, delivery_estimate, delivery_fee,
     price_range, price_range_scale,
-    promotions[], wolt_plus
+    promotions[], badges[], menu_highlights[], wolt_plus
   }
 }
 ```
 
-Same row shape as `venues`. Sections preserve the upstream ordering you
-see on wolt.com.
+Same row shape as `venues`, including the additive `badges[]` and
+`menu_highlights[]` fields described above. Sections preserve the
+upstream ordering you see on wolt.com. The `feed` table renders the
+Highlights column by default (pass `--show-highlights=false` to hide).
 
 ### `wolt venues categories` — CategoryList
 

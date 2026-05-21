@@ -19,10 +19,12 @@ type RatingDetail struct {
 	Volume             int     `json:"volume"`
 }
 
-// Badge stores a venue badge.
+// Badge stores a venue badge. Icon is populated for the BadgesV2 shape;
+// the legacy Badges payload omits it, so it deserializes as "".
 type Badge struct {
 	Text    string `json:"text"`
 	Variant string `json:"variant"`
+	Icon    string `json:"icon"`
 }
 
 // Venue stores discovery item venue details.
@@ -50,6 +52,7 @@ type Venue struct {
 	Tags                   []string     `json:"tags"`
 	Rating                 *Rating      `json:"rating"`
 	PriceRange             int          `json:"price_range"`
+	PreviewItems           []any        `json:"venue_preview_items"`
 }
 
 // Tagline returns the venue's marketing one-liner, preferring the localized

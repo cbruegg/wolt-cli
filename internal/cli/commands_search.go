@@ -29,6 +29,7 @@ func newSearchVenuesCommand(deps Dependencies) *cobra.Command {
 	var maxDeliveryFeeSet bool
 	var promotionsOnly bool
 	var enrich bool
+	var showHighlights bool
 
 	cmd := &cobra.Command{
 		Use:   "venues",
@@ -124,7 +125,7 @@ func newSearchVenuesCommand(deps Dependencies) *cobra.Command {
 			}
 
 			if format == output.FormatTable {
-				return writeTable(cmd, buildVenueSearchTable(data), flags.Output)
+				return writeTable(cmd, buildVenueSearchTable(data, showHighlights), flags.Output)
 			}
 			env := output.BuildEnvelope(profile, flags.Locale, data, warnings, nil)
 			return writeMachinePayload(cmd, env, format, flags.Output)
@@ -141,6 +142,7 @@ func newSearchVenuesCommand(deps Dependencies) *cobra.Command {
 	cmd.Flags().IntVar(&maxDeliveryFee, "max-delivery-fee", 0, "Maximum delivery fee in minor units (for example 500 = EUR 5.00)")
 	cmd.Flags().BoolVar(&promotionsOnly, "promotions-only", false, "Only include venues with promotion labels (implies --enrich).")
 	cmd.Flags().BoolVar(&enrich, "enrich", false, "Fetch per-venue promotion banners and Wolt+ status (slower; off by default).")
+	cmd.Flags().BoolVar(&showHighlights, "show-highlights", false, "Append a Highlights column with venue_preview_items (off by default to keep the table narrow).")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Limit returned rows")
 	cmd.Flags().IntVar(&offset, "offset", 0, "Offset returned rows")
 	cmd.Flags().IntVar(&page, "page", 0, "1-based page number (requires --limit; cannot be combined with --offset)")
@@ -156,8 +158,11 @@ func newSearchVenuesCommand(deps Dependencies) *cobra.Command {
 	return cmd
 }
 
-func buildVenueSearchTable(data map[string]any) string {
+func buildVenueSearchTable(data map[string]any, showHighlights bool) string {
 	headers := []string{"Venue", "Slug", "Tagline", "Top offer", "Rating", "Delivery", "Fee", "Wolt+"}
+	if showHighlights {
+		headers = append(headers, "Highlights")
+	}
 	rows := [][]string{}
 	for _, value := range asSlice(data["items"]) {
 		item := asMap(value)
@@ -169,8 +174,9 @@ func buildVenueSearchTable(data map[string]any) string {
 		if fee == "" {
 			fee = "-"
 		}
-		rows = append(rows, []string{
-			asString(item["name"]),
+		name := formatBadgePrefix(asSlice(item["badges"])) + asString(item["name"])
+		row := []string{
+			name,
 			fallbackString(asString(item["slug"]), "-"),
 			truncateForTable(asString(item["tagline"]), 32),
 			truncateForTable(asString(item["top_offer"]), 26),
@@ -178,7 +184,11 @@ func buildVenueSearchTable(data map[string]any) string {
 			asString(item["delivery_estimate"]),
 			fee,
 			boolToYesNo(asBool(item["wolt_plus"])),
-		})
+		}
+		if showHighlights {
+			row = append(row, formatHighlightsCell(asSlice(item["menu_highlights"]), 32))
+		}
+		rows = append(rows, row)
 	}
 	return output.RenderTable("Venue search: "+asString(data["query"]), headers, rows)
 }

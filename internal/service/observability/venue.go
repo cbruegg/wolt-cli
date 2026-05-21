@@ -73,6 +73,8 @@ func BuildDiscoveryFeed(sections []domain.Section, city string, limit *int, wolt
 				"price_range":       priceRangeValue,
 				"price_range_scale": priceRangeScale(item.Venue.PriceRange),
 				"promotions":        venuePromotionTexts(item.Venue),
+				"badges":            venueBadgeGlyphs(item.Venue),
+				"menu_highlights":   venueMenuHighlights(item.Venue),
 				"wolt_plus":         isWoltPlus,
 			})
 		}
@@ -310,6 +312,8 @@ func BuildVenueSearchResult(
 			"price_range":       priceRangeValue,
 			"price_range_scale": priceRangeScale(item.Venue.PriceRange),
 			"promotions":        venuePromotionTexts(item.Venue),
+			"badges":            venueBadgeGlyphs(item.Venue),
+			"menu_highlights":   venueMenuHighlights(item.Venue),
 			"wolt_plus":         venueWoltPlus(item.Venue),
 		})
 	}
@@ -387,6 +391,57 @@ func venueTopOffer(venue *domain.Venue) string {
 		}
 	}
 	return ""
+}
+
+// venueMenuHighlights flattens venue_preview_items into a stable
+// { name, formatted_price } shape. Upstream only populates this for
+// sponsored / featured rows; returns an empty slice otherwise.
+func venueMenuHighlights(venue *domain.Venue) []map[string]any {
+	out := []map[string]any{}
+	if venue == nil {
+		return out
+	}
+	for _, raw := range venue.PreviewItems {
+		entry, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		name := firstNonEmptyString(entry, "name", "title", "label")
+		price := firstNonEmptyString(entry, "formatted_price", "price_formatted", "formatted_amount", "price")
+		if name == "" && price == "" {
+			continue
+		}
+		out = append(out, map[string]any{
+			"name":            name,
+			"formatted_price": price,
+		})
+	}
+	return out
+}
+
+// venueBadgeGlyphs maps the BadgesV2 array onto the stable
+// { icon, variant, text } output shape. Reads from BadgesV2 only —
+// the legacy Badges array omits icon and lives in the `promotions[]`
+// derivation already.
+func venueBadgeGlyphs(venue *domain.Venue) []map[string]any {
+	out := []map[string]any{}
+	if venue == nil {
+		return out
+	}
+	for _, badge := range venue.BadgesV2 {
+		text := strings.TrimSpace(badge.Text)
+		icon := strings.TrimSpace(badge.Icon)
+		variant := strings.TrimSpace(badge.Variant)
+		if text == "" && icon == "" {
+			continue
+		}
+		out = append(out, map[string]any{
+			"icon":    icon,
+			"variant": variant,
+			"text":    text,
+		})
+	}
+	return out
 }
 
 func venuePromotionTexts(venue *domain.Venue) []string {

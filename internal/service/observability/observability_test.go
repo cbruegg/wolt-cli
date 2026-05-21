@@ -584,3 +584,114 @@ func intValue(v any) int {
 func intPtr(v int) *int {
 	return &v
 }
+
+func TestBuildDiscoveryFeedSurfacesBadgesAndMenuHighlights(t *testing.T) {
+	section := domain.Section{
+		Name:  "popular",
+		Title: "Popular",
+		Items: []domain.Item{
+			{
+				Title:   "Featured Venue",
+				TrackID: "track-1",
+				Link:    domain.Link{Target: "venue-feat"},
+				Venue: &domain.Venue{
+					ID:       "venue-feat",
+					Slug:     "featured-venue",
+					Currency: "EUR",
+					BadgesV2: []domain.Badge{
+						{Icon: "wolt-plus", Variant: "primary", Text: "Wolt+"},
+						{Icon: "coupon-fill", Variant: "discount", Text: "20% off"},
+					},
+					PreviewItems: []any{
+						map[string]any{"name": "Cheeseburger pizza", "formatted_price": "19.90 €"},
+						map[string]any{"name": "Garlic bread", "price": "4.50 €"},
+					},
+				},
+			},
+		},
+	}
+
+	data := observability.BuildDiscoveryFeed([]domain.Section{section}, "Helsinki", nil, false)
+	items := asSlice(t, asMap(t, asSlice(t, data["sections"])[0])["items"])
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	row := asMap(t, items[0])
+
+	badges := asSlice(t, row["badges"])
+	if len(badges) != 2 {
+		t.Fatalf("expected 2 badges, got %d", len(badges))
+	}
+	firstBadge := asMap(t, badges[0])
+	if firstBadge["icon"] != "wolt-plus" || firstBadge["variant"] != "primary" || firstBadge["text"] != "Wolt+" {
+		t.Fatalf("unexpected first badge shape: %v", firstBadge)
+	}
+
+	highlights := asSlice(t, row["menu_highlights"])
+	if len(highlights) != 2 {
+		t.Fatalf("expected 2 highlights, got %d", len(highlights))
+	}
+	first := asMap(t, highlights[0])
+	if first["name"] != "Cheeseburger pizza" || first["formatted_price"] != "19.90 €" {
+		t.Fatalf("unexpected highlight shape: %v", first)
+	}
+	second := asMap(t, highlights[1])
+	if second["name"] != "Garlic bread" || second["formatted_price"] != "4.50 €" {
+		t.Fatalf("expected fallback `price` key to populate formatted_price, got %v", second)
+	}
+}
+
+func TestBuildDiscoveryFeedEmitsEmptyBadgesAndHighlights(t *testing.T) {
+	section := domain.Section{
+		Name:  "boring",
+		Title: "Boring",
+		Items: []domain.Item{
+			{
+				Title: "Plain Venue",
+				Link:  domain.Link{Target: "venue-plain"},
+				Venue: &domain.Venue{ID: "venue-plain", Slug: "plain-venue", Currency: "EUR"},
+			},
+		},
+	}
+	data := observability.BuildDiscoveryFeed([]domain.Section{section}, "", nil, false)
+	row := asMap(t, asSlice(t, asMap(t, asSlice(t, data["sections"])[0])["items"])[0])
+	if badges := asSlice(t, row["badges"]); len(badges) != 0 {
+		t.Fatalf("expected empty badges slice, got %v", badges)
+	}
+	if highlights := asSlice(t, row["menu_highlights"]); len(highlights) != 0 {
+		t.Fatalf("expected empty menu_highlights slice, got %v", highlights)
+	}
+}
+
+func TestBuildVenueSearchResultSurfacesBadgesAndMenuHighlights(t *testing.T) {
+	items := []domain.Item{
+		{
+			Title:   "Burger Place",
+			TrackID: "t1",
+			Link:    domain.Link{Target: "v1"},
+			Venue: &domain.Venue{
+				ID:       "v1",
+				Slug:     "burger-place",
+				Currency: "EUR",
+				BadgesV2: []domain.Badge{{Icon: "bike", Variant: "primary", Text: "Fast"}},
+				PreviewItems: []any{
+					map[string]any{"title": "Bacon Burger", "formatted_price": "9.90 €"},
+				},
+			},
+		},
+	}
+	data, _ := observability.BuildVenueSearchResult(items, "burger", observability.VenueSortRecommended, nil, "", false, false, nil, 0)
+	row := asMap(t, asSlice(t, data["items"])[0])
+	badges := asSlice(t, row["badges"])
+	if len(badges) != 1 || asMap(t, badges[0])["icon"] != "bike" {
+		t.Fatalf("expected bike badge, got %v", badges)
+	}
+	highlights := asSlice(t, row["menu_highlights"])
+	if len(highlights) != 1 {
+		t.Fatalf("expected 1 highlight, got %v", highlights)
+	}
+	first := asMap(t, highlights[0])
+	if first["name"] != "Bacon Burger" || first["formatted_price"] != "9.90 €" {
+		t.Fatalf("expected fallback `title` key to populate name, got %v", first)
+	}
+}
