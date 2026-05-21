@@ -606,6 +606,127 @@ func TestFeedTableShowsHighlightsByDefault(t *testing.T) {
 	}
 }
 
+func TestTopFlattensFeedAndDedupes(t *testing.T) {
+	sections := []domain.Section{
+		{
+			Name:  "dinner",
+			Title: "Dinner near you",
+			Items: []domain.Item{
+				{Title: "Noodle Story", Link: domain.Link{Target: "v1"}, Venue: &domain.Venue{ID: "v1", Slug: "noodle-story", Currency: "EUR"}},
+				{Title: "Putte's", Link: domain.Link{Target: "v2"}, Venue: &domain.Venue{ID: "v2", Slug: "puttes", Currency: "EUR"}},
+			},
+		},
+		{
+			Name:  "brands",
+			Title: "Brands",
+			Items: []domain.Item{
+				{Title: "K-Market", Link: domain.Link{Target: "k-market"}},
+			},
+		},
+		{
+			Name:  "fastest",
+			Title: "Fastest delivery",
+			Items: []domain.Item{
+				// Duplicate of v1 — dedupe should drop it.
+				{Title: "Noodle Story (duplicate)", Link: domain.Link{Target: "v1"}, Venue: &domain.Venue{ID: "v1", Slug: "noodle-story", Currency: "EUR"}},
+				{Title: "KFC", Link: domain.Link{Target: "v3"}, Venue: &domain.Venue{ID: "v3", Slug: "kfc", Currency: "EUR"}},
+			},
+		},
+	}
+	deps := cli.Dependencies{
+		Wolt: &mockWolt{
+			sectionsFunc: func(context.Context, domain.Location) ([]domain.Section, error) {
+				return sections, nil
+			},
+		},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 60.1, Lon: 24.9}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+
+	exitCode, out := runCLIWithDeps(t, deps, "top", "2", "--format", "json")
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
+	}
+	payload := mustJSON(t, out)
+	data := asMapPayload(t, payload["data"])
+	venues := asSlicePayload(t, data["venues"])
+	if len(venues) != 2 {
+		t.Fatalf("expected exactly 2 venues, got %d", len(venues))
+	}
+	if asMapPayload(t, venues[0])["venue_id"] != "v1" {
+		t.Fatalf("expected first venue v1 from upstream order, got %v", venues[0])
+	}
+	if asMapPayload(t, venues[1])["venue_id"] != "v2" {
+		t.Fatalf("expected second venue v2, got %v", venues[1])
+	}
+	limit, _ := data["limit"].(float64)
+	if int(limit) != 2 {
+		t.Fatalf("expected limit=2 in payload, got %v", data["limit"])
+	}
+}
+
+func TestTopExcludesBrandSections(t *testing.T) {
+	sections := []domain.Section{
+		{
+			Name:  "stores",
+			Title: "Popular stores",
+			Items: []domain.Item{
+				{Title: "Wolt Market", Link: domain.Link{Target: "wm"}},
+				{Title: "K-Market", Link: domain.Link{Target: "km"}},
+			},
+		},
+		{
+			Name:  "dinner",
+			Title: "Dinner",
+			Items: []domain.Item{
+				{Title: "Putte's", Link: domain.Link{Target: "v1"}, Venue: &domain.Venue{ID: "v1", Slug: "puttes", Currency: "EUR"}},
+			},
+		},
+	}
+	deps := cli.Dependencies{
+		Wolt: &mockWolt{
+			sectionsFunc: func(context.Context, domain.Location) ([]domain.Section, error) {
+				return sections, nil
+			},
+		},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 60.1, Lon: 24.9}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+
+	exitCode, out := runCLIWithDeps(t, deps, "top", "--format", "json")
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
+	}
+	venues := asSlicePayload(t, asMapPayload(t, mustJSON(t, out)["data"])["venues"])
+	if len(venues) != 1 {
+		t.Fatalf("expected only venue sections to contribute, got %d venues", len(venues))
+	}
+	if asMapPayload(t, venues[0])["slug"] != "puttes" {
+		t.Fatalf("expected the venue-section entry, got %v", venues[0])
+	}
+}
+
+func TestTopRejectsInvalidN(t *testing.T) {
+	deps := cli.Dependencies{
+		Wolt:     &mockWolt{},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 60.1, Lon: 24.9}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+	exitCode, out := runCLIWithDeps(t, deps, "top", "fish")
+	if exitCode == 0 {
+		t.Fatalf("expected non-zero exit for non-integer N, got %d:\n%s", exitCode, out)
+	}
+	if !strings.Contains(out, "invalid N") {
+		t.Fatalf("expected friendly invalid-N message, got:\n%s", out)
+	}
+}
+
 func TestFeedSummaryFlagPrintsOneLinePerSection(t *testing.T) {
 	sections := []domain.Section{
 		{
