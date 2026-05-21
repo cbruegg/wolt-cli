@@ -1,0 +1,143 @@
+name: Live smoke (weekly)
+
+# Weekly smoke against real Wolt consumer-api endpoints. Detects
+# upstream contract drift before users do. Read-only only — no
+# login, no cart mutations, no checkout placement, no stats sync.
+#
+# Required repository secrets:
+#   WOLT_SMOKE_WTOKEN          access token (auto-rotated on refresh)
+#   WOLT_SMOKE_WREFRESH_TOKEN  refresh token (the durable secret)
+#
+# Refresh-token rotation caveat: if Wolt rotates the refresh token on
+# every use (as most OAuth providers do), the secret will be stale
+# after the first run. When the workflow fails for that reason,
+# re-seed the secrets from a fresh local login:
+#
+#   wolt status   # triggers a refresh and persists rotated tokens
+#   python3 -c "import json; c=json.load(open('$HOME/.wolt/.wolt-config.json')); a=c['account']; print('WTOKEN=',a['wtoken']); print('WRTOKEN=',a['wrefresh_token'])"
+#
+# Then paste the values back into the GitHub repo secrets.
+
+on:
+  schedule:
+    - cron: "0 7 * * 1" # Mondays 07:00 UTC ≈ Helsinki morning
+  workflow_dispatch:
+
+# Note: deliberately no pull_request / push trigger. The secrets must
+# never be available to fork PRs.
+
+permissions:
+  contents: read
+  issues: write # for the failure-tracker issue thread
+
+concurrency:
+  group: live-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: Smoke read-only endpoints
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      WOLT_SMOKE_WTOKEN: ${{ secrets.WOLT_SMOKE_WTOKEN }}
+      WOLT_SMOKE_WREFRESH_TOKEN: ${{ secrets.WOLT_SMOKE_WREFRESH_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+          cache: true
+
+      - name: Build wolt
+        run: |
+          BUILD_VERSION="$(git describe --tags --always --dirty)"
+          go build \
+            -trimpath \
+            -ldflags "-s -w -X main.version=${BUILD_VERSION}" \
+            -o bin/wolt ./cmd/wolt
+          ./bin/wolt --version
+
+      - name: Verify smoke secrets are set
+        run: |
+          if [ -z "${WOLT_SMOKE_WTOKEN}" ] || [ -z "${WOLT_SMOKE_WREFRESH_TOKEN}" ]; then
+            echo "::error::Required secrets WOLT_SMOKE_WTOKEN and WOLT_SMOKE_WREFRESH_TOKEN are missing. See workflow header for seeding instructions."
+            exit 1
+          fi
+
+      - name: Run live smoke
+        # The script prints only its own status lines and a redacted
+        # error tail on failure. Its log is safe to surface publicly;
+        # the raw JSON outputs in /tmp/wolt-smoke are never uploaded.
+        run: ./scripts/live-smoke.sh
+
+      - name: Step summary
+        if: always()
+        # Surfaces only endpoint label + pass/fail. No bytes counts, no
+        # content snippets — we don't want side-channel signals about
+        # the account in a public log either.
+        run: |
+          {
+            echo "## Live smoke results"
+            echo ""
+            if [ -d /tmp/wolt-smoke ]; then
+              echo "| Endpoint | Status |"
+              echo "|---|---|"
+              for f in /tmp/wolt-smoke/*.json; do
+                [ -f "$f" ] || continue
+                name="$(basename "$f" .json | tr '_' ' ')"
+                err="${f%.json}.err"
+                if [ -s "$err" ]; then
+                  status="❌"
+                else
+                  status="✅"
+                fi
+                printf "| %s | %s |\n" "$name" "$status"
+              done
+            else
+              echo "_No smoke output collected — failed before any endpoint ran._"
+            fi
+          } >>"${GITHUB_STEP_SUMMARY}"
+
+      - name: Wipe local smoke outputs
+        if: always()
+        # Belt-and-braces: prevent any later step (or future workflow
+        # change) from accidentally uploading them as artifacts.
+        run: rm -rf /tmp/wolt-smoke
+
+      - name: Open or update tracker issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # De-dupe by fixed title prefix. If an open issue with this
+          # prefix exists, append a comment; otherwise file a new one.
+          title_prefix="Live smoke failing"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          today="$(date -u +%Y-%m-%d)"
+          body=$(
+            cat <<EOF
+          Weekly live-Wolt smoke failed on **${today}**.
+
+          - Run: ${run_url}
+          - Likely causes (in rough order of frequency):
+            1. \`WOLT_SMOKE_WREFRESH_TOKEN\` has been rotated and is now stale → re-seed the secret from a fresh local login.
+            2. Wolt changed an endpoint contract (the smoke is doing its job — fix the gateway parser).
+            3. Transient Wolt 5xx / 429 burst → rerun via Actions → Live smoke (weekly) → Run workflow.
+
+          See the failed step in the run for the specific endpoint and stderr.
+          EOF
+          )
+          existing="$(gh issue list --state open --search "in:title \"${title_prefix}\"" --json number --jq '.[0].number' || true)"
+          if [ -n "${existing}" ]; then
+            gh issue comment "${existing}" --body "${body}"
+          else
+            gh issue create \
+              --title "${title_prefix} — first observed ${today}" \
+              --body "${body}"
+          fi
