@@ -49,7 +49,8 @@ redact() {
 # run "label" cmd args...
 # Captures stdout JSON to ${SMOKE_DIR}/<label>.json. Stderr to
 # ${SMOKE_DIR}/<label>.err. On non-zero exit, prints a REDACTED stderr
-# tail so the public CI log never carries account identifiers.
+# tail AND the redacted error envelope (code+message), since wolt-cli
+# in --format json puts errors in stdout via emitError.
 run() {
   local label="$1"; shift
   local slug="${label// /_}"
@@ -62,7 +63,16 @@ run() {
   else
     local rc=$?
     printf "FAIL (exit %d)\n" "${rc}"
-    head -20 "${err}" 2>/dev/null | redact | sed 's/^/    | /' || true
+    {
+      # Surface the envelope error first — it's the canonical reason
+      # wolt-cli exited non-zero in JSON mode.
+      jq -r '
+        .errors // empty
+        | "code:    \(.code // "-")\nmessage: \(.message // "-")"
+      ' "${out}" 2>/dev/null
+      # Then any stderr (verbose trace, panics, etc.) for completeness.
+      head -10 "${err}" 2>/dev/null
+    } | redact | sed 's/^/    | /' | head -20 || true
     fail=$((fail + 1))
     failures+=("${label}")
   fi
@@ -98,6 +108,19 @@ seed_config_from_env() {
 }
 
 seed_config_from_env
+
+# Pre-flight: print a redacted HTTP trace of the first authenticated
+# call so the public log shows the actual status code Wolt returned
+# (instead of the smoke just printing "FAIL"). Verbose lines look like
+# "[http] -> GET <url>" / "[http] <- GET <url> status=N duration=Yms" —
+# the redactor scrubs any token/ID/email that sneaks in.
+echo "-- pre-flight diagnostic --"
+"${WOLT_BIN}" status --format json --verbose >/dev/null 2>"${SMOKE_DIR}/preflight.stderr" || true
+grep -E '^\[(http|verbose)\]' "${SMOKE_DIR}/preflight.stderr" 2>/dev/null \
+  | redact \
+  | sed 's/^/    /' \
+  | head -10 || true
+echo "-- end pre-flight --"
 
 # ---- read-only smoke surface --------------------------------------
 
