@@ -125,7 +125,11 @@ func newSearchVenuesCommand(deps Dependencies) *cobra.Command {
 			}
 
 			if format == output.FormatTable {
-				return writeTable(cmd, buildVenueSearchTable(data, showHighlights), flags.Output)
+				effectiveHighlights := showHighlights
+				if !cmd.Flags().Changed("show-highlights") {
+					effectiveHighlights = anyVenueRowHasHighlights(asSlice(data["items"]))
+				}
+				return writeTable(cmd, buildVenueSearchTable(data, effectiveHighlights), flags.Output)
 			}
 			env := output.BuildEnvelope(profile, flags.Locale, data, warnings, nil)
 			return writeMachinePayload(cmd, env, format, flags.Output)
@@ -142,7 +146,7 @@ func newSearchVenuesCommand(deps Dependencies) *cobra.Command {
 	cmd.Flags().IntVar(&maxDeliveryFee, "max-delivery-fee", 0, "Maximum delivery fee in minor units (for example 500 = EUR 5.00)")
 	cmd.Flags().BoolVar(&promotionsOnly, "promotions-only", false, "Only include venues with promotion labels (implies --enrich).")
 	cmd.Flags().BoolVar(&enrich, "enrich", false, "Fetch per-venue promotion banners and Wolt+ status (slower; off by default).")
-	cmd.Flags().BoolVar(&showHighlights, "show-highlights", false, "Append a Highlights column with venue_preview_items (off by default to keep the table narrow).")
+	cmd.Flags().BoolVar(&showHighlights, "show-highlights", false, "Append a Highlights column with venue_preview_items. Default: auto (show only when at least one row has data).")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Limit returned rows")
 	cmd.Flags().IntVar(&offset, "offset", 0, "Offset returned rows")
 	cmd.Flags().IntVar(&page, "page", 0, "1-based page number (requires --limit; cannot be combined with --offset)")

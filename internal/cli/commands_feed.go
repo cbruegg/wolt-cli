@@ -79,7 +79,11 @@ func newFeedCommand(deps Dependencies) *cobra.Command {
 			}
 
 			if format == output.FormatTable {
-				return writeTable(cmd, buildFeedTable(data, showHighlights), flags.Output)
+				effectiveHighlights := showHighlights
+				if !cmd.Flags().Changed("show-highlights") {
+					effectiveHighlights = anyFeedSectionHasHighlights(asSlice(data["sections"]))
+				}
+				return writeTable(cmd, buildFeedTable(data, effectiveHighlights), flags.Output)
 			}
 			env := output.BuildEnvelope(profile, flags.Locale, data, nil, nil)
 			return writeMachinePayload(cmd, env, format, flags.Output)
@@ -91,7 +95,7 @@ func newFeedCommand(deps Dependencies) *cobra.Command {
 	cmd.Flags().IntVar(&sectionLimit, "section-limit", 0, "Limit returned sections (0 = all).")
 	cmd.Flags().IntVar(&perSectionLimit, "per-section", 6, "Max venues rendered per section in the table.")
 	cmd.Flags().StringVar(&query, "query", "", "Filter venues by name/tagline/top-offer substring (case-insensitive).")
-	cmd.Flags().BoolVar(&showHighlights, "show-highlights", true, "Append a Highlights column with venue_preview_items (on by default; --show-highlights=false to hide).")
+	cmd.Flags().BoolVar(&showHighlights, "show-highlights", true, "Append a Highlights column with venue_preview_items. Default: auto (show only when at least one row has data). Pass --show-highlights or --show-highlights=false to force.")
 	addGlobalFlags(cmd, &flags)
 	cmd.PreRun = func(cmd *cobra.Command, _ []string) {
 		latSet = cmd.Flags().Changed("lat")

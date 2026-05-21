@@ -417,26 +417,62 @@ func TestSearchVenuesHighlightsOptInColumn(t *testing.T) {
 		Version:  "1.1.1",
 	}
 
+	// Default (no --show-highlights flag) — auto mode shows the column
+	// because this venue has menu_highlights data.
 	exitCodeDefault, outDefault := runCLIWithDeps(t, deps, "venues", "--query", "burger")
 	if exitCodeDefault != 0 {
 		t.Fatalf("expected exit 0 (default), got %d\noutput:\n%s", exitCodeDefault, outDefault)
 	}
-	if strings.Contains(outDefault, "Highlights") {
-		t.Fatalf("expected Highlights column hidden by default on venues, got:\n%s", outDefault)
+	if !strings.Contains(outDefault, "Highlights") {
+		t.Fatalf("expected Highlights column auto-shown when row has data, got:\n%s", outDefault)
+	}
+	if !strings.Contains(outDefault, "Cheeseburger pizza 19.90 €") {
+		t.Fatalf("expected highlight value in cell, got:\n%s", outDefault)
 	}
 	if !strings.Contains(outDefault, "+ Burger Place") {
 		t.Fatalf("expected Wolt+ glyph prefix on venue cell, got:\n%s", outDefault)
 	}
 
-	exitCodeOn, outOn := runCLIWithDeps(t, deps, "venues", "--query", "burger", "--show-highlights")
+	// --show-highlights=false force-hides even when data is present.
+	exitCodeOff, outOff := runCLIWithDeps(t, deps, "venues", "--query", "burger", "--show-highlights=false")
+	if exitCodeOff != 0 {
+		t.Fatalf("expected exit 0 (--show-highlights=false), got %d\noutput:\n%s", exitCodeOff, outOff)
+	}
+	if strings.Contains(outOff, "Highlights") {
+		t.Fatalf("expected Highlights column hidden when force-off, got:\n%s", outOff)
+	}
+}
+
+func TestSearchVenuesHighlightsHiddenWhenDataAbsent(t *testing.T) {
+	plain := buildVenue("venue-2", "plain-place", "Plain Street")
+	items := []domain.Item{{Title: "Plain Place", TrackID: "1", Link: domain.Link{Target: "venue-2"}, Venue: plain}}
+
+	deps := cli.Dependencies{
+		Wolt: &mockWolt{
+			itemsFunc: func(context.Context, domain.Location) ([]domain.Item, error) {
+				return items, nil
+			},
+		},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 0, Lon: 0}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+
+	exitCode, out := runCLIWithDeps(t, deps, "venues", "--query", "plain")
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
+	}
+	if strings.Contains(out, "Highlights") {
+		t.Fatalf("expected Highlights column hidden in auto mode when no data, got:\n%s", out)
+	}
+
+	exitCodeOn, outOn := runCLIWithDeps(t, deps, "venues", "--query", "plain", "--show-highlights")
 	if exitCodeOn != 0 {
-		t.Fatalf("expected exit 0 (--show-highlights), got %d\noutput:\n%s", exitCodeOn, outOn)
+		t.Fatalf("expected exit 0 with --show-highlights, got %d\noutput:\n%s", exitCodeOn, outOn)
 	}
 	if !strings.Contains(outOn, "Highlights") {
-		t.Fatalf("expected Highlights column with --show-highlights, got:\n%s", outOn)
-	}
-	if !strings.Contains(outOn, "Cheeseburger pizza 19.90 €") {
-		t.Fatalf("expected highlight value in cell, got:\n%s", outOn)
+		t.Fatalf("expected Highlights column forced on with --show-highlights, got:\n%s", outOn)
 	}
 }
 
@@ -464,6 +500,49 @@ func TestSearchVenuesBadgePlainModeFallback(t *testing.T) {
 	}
 	if !strings.Contains(out, "[Wolt+] Burger Place") {
 		t.Fatalf("expected plain-mode bracketed prefix, got:\n%s", out)
+	}
+}
+
+func TestFeedTableAutoHidesEmptyHighlightsColumn(t *testing.T) {
+	sections := []domain.Section{
+		{
+			Name:  "popular",
+			Title: "Popular",
+			Items: []domain.Item{
+				{
+					Title: "Plain Venue",
+					Link:  domain.Link{Target: "venue-plain"},
+					Venue: &domain.Venue{ID: "venue-plain", Slug: "plain", Currency: "EUR", DeliveryPriceInt: intPtr(0), EstimateRange: "10-20"},
+				},
+			},
+		},
+	}
+	deps := cli.Dependencies{
+		Wolt: &mockWolt{
+			sectionsFunc: func(context.Context, domain.Location) ([]domain.Section, error) {
+				return sections, nil
+			},
+		},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 60.1, Lon: 24.9}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+
+	exitCode, out := runCLIWithDeps(t, deps, "feed")
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
+	}
+	if strings.Contains(out, "Highlights") {
+		t.Fatalf("expected Highlights column hidden when no row has data, got:\n%s", out)
+	}
+
+	exitCodeForced, outForced := runCLIWithDeps(t, deps, "feed", "--show-highlights")
+	if exitCodeForced != 0 {
+		t.Fatalf("expected exit 0 with --show-highlights, got %d\noutput:\n%s", exitCodeForced, outForced)
+	}
+	if !strings.Contains(outForced, "Highlights") {
+		t.Fatalf("expected Highlights column forced on with --show-highlights, got:\n%s", outForced)
 	}
 }
 

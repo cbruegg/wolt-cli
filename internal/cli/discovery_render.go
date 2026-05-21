@@ -103,6 +103,37 @@ func formatBadgePrefix(badges []any) string {
 	return strings.Join(glyphs, "") + " "
 }
 
+// anyVenueRowHasHighlights reports whether at least one row in the
+// given slice carries a non-empty menu_highlights array. Used to
+// auto-hide the Highlights column when no row has data to show.
+func anyVenueRowHasHighlights(rows []any) bool {
+	for _, raw := range rows {
+		item := asMap(raw)
+		if item == nil {
+			continue
+		}
+		if len(asSlice(item["menu_highlights"])) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// anyFeedSectionHasHighlights walks the feed sections and reports
+// whether any venue-section row has highlights data.
+func anyFeedSectionHasHighlights(sections []any) bool {
+	for _, raw := range sections {
+		section := asMap(raw)
+		if section == nil {
+			continue
+		}
+		if anyVenueRowHasHighlights(asSlice(section["items"])) {
+			return true
+		}
+	}
+	return false
+}
+
 // formatHighlightsCell joins menu_highlights[] entries as
 // "name (price); name (price)" and truncates the whole string to max
 // runes. Truncation happens after join — every entry is intact in JSON
