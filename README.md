@@ -185,6 +185,10 @@ server, and opens your browser. There is no Node.js install step — the
 dashboard is shipped as a static HTML/JS/WASM bundle, and the sync runs
 inside `wolt-cli` itself.
 
+<p align="center">
+  <img src="docs-site/static/img/stats/dashboard-overview.png" alt="wolt stats dashboard overview" width="900" />
+</p>
+
 ```bash
 # All-in-one. First run downloads the bundle (~1.5 MB) and the full order
 # history; subsequent runs are incremental.
@@ -206,6 +210,13 @@ wolt stats --bundle-version v0.1.0
 Everything lives under `~/.wolt/stats/` (override with `--stats-dir` or
 `$WOLT_STATS_DIR`). The SQLite file is at
 `~/.wolt/stats/db/wolt-history.sqlite`. The server binds to `127.0.0.1` only.
+
+The sync is resilient by design: catalog and detail phases share an
+inter-call pacer (1.1 s/call baseline) that auto-adjusts when Wolt returns
+`HTTP 429`, individual retries honor `Retry-After` with exponential backoff,
+and incremental mode picks up exactly where a previous run stopped.
+
+Full reference (sync model, flags, schema, privacy): [`docs/stats.md`](docs/stats.md).
 
 ## Rendering Notes
 
@@ -242,6 +253,7 @@ inherits the same session. Full tool catalog and per-client setup steps:
 ## Documentation
 
 - [`docs/commands.md`](docs/commands.md) — full command reference with flags and behavior
+- [`docs/stats.md`](docs/stats.md) — local stats dashboard: sync model, flags, schema, privacy
 - [`docs/mcp.md`](docs/mcp.md) — MCP server: tool catalog, client setup, troubleshooting
 - [`docs/output-contract.md`](docs/output-contract.md) — JSON/YAML envelope and per-command schemas
 - [`docs/discovery-enrichment.md`](docs/discovery-enrichment.md) — design notes on `venue_preview_items`, `badges_v2`, and brand carousels

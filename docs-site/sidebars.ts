@@ -8,7 +8,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Reference',
       collapsed: false,
-      items: ['commands', 'output-contract'],
+      items: ['commands', 'stats', 'mcp', 'output-contract'],
     },
     {
       type: 'category',

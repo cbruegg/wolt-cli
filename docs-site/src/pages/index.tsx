@@ -570,7 +570,6 @@ function Features() {
 
 function Stats() {
   const overview = useBaseUrl('/img/stats/dashboard-overview.png');
-  const detail = useBaseUrl('/img/stats/dashboard-detail.png');
   return (
     <section id="stats" className="stats">
       <header className="section-head">
@@ -579,10 +578,11 @@ function Stats() {
           <code>wolt stats</code> — your order history, your dashboard.
         </h2>
         <p className="section-head__lede">
-          One command syncs every order you've ever placed into a local SQLite database
-          and opens a local dashboard at <code>http://127.0.0.1:5173</code>. Spend
-          breakdown, top venues, favourite items — all derived from the same payloads
-          the CLI already speaks. Nothing leaves your machine.
+          One command syncs every order you've ever placed into a local SQLite
+          database and opens a local dashboard at{' '}
+          <code>http://127.0.0.1:5173</code>. Spend breakdown, top venues,
+          favourite items — all derived from the same payloads the CLI already
+          speaks. Nothing leaves your machine.
         </p>
       </header>
 
@@ -590,24 +590,30 @@ function Stats() {
         <div className="stats__copy">
           <ul className="stats__bullets">
             <li>
-              <strong>Incremental by default.</strong> Reruns scan until they hit an
-              order they already know, so the second run takes seconds. Pass{' '}
-              <code>--resync</code> for a full rebuild.
+              <strong>Local-only data.</strong> SQLite at{' '}
+              <code>~/.wolt/stats/db/wolt-history.sqlite</code>, dashboard pinned
+              to a versioned GitHub release, no telemetry. The dashboard is a
+              static SvelteKit app reading the file in your browser.
             </li>
             <li>
-              <strong>Local-only data.</strong> The SQLite file lives at{' '}
-              <code>~/.wolt/stats/db/wolt-history.sqlite</code>. The dashboard bundle
-              is pinned to a versioned GitHub release.
+              <strong>Incremental by default.</strong> Reruns scan until they
+              hit an order they already know, so the second run takes seconds.{' '}
+              <code>--resync</code> forces a full rebuild;{' '}
+              <code>--no-sync</code> just re-opens the dashboard.
             </li>
             <li>
               <strong>Adaptive rate-limiting.</strong> Honors Wolt's{' '}
-              <code>Retry-After</code> header and tunes per-call pacing to whatever
-              your account's rate budget will sustain.
+              <code>Retry-After</code> header and tunes per-call pacing to
+              whatever rate your account's throttle window will sustain. A run
+              that hits 429s settles on the right speed and finishes itself.
             </li>
             <li>
-              <strong>Browser optional.</strong> <code>--no-open</code> serves the
-              dashboard without launching a tab. <code>--no-sync</code> opens the
-              dashboard against whatever's already in the local DB.
+              <strong>Everything Wolt knows.</strong> Catalog and detail
+              payloads land verbatim in the DB: line items, options, payments,
+              delivery distance, service fees, discounts, gift cards, adjustment
+              rows, creation/delivery times. The dashboard derives spend by
+              month, top venues, item leaderboards, and weekday/hour patterns
+              on top.
             </li>
           </ul>
           <pre className="snippet">
@@ -615,24 +621,22 @@ function Stats() {
               <span className="tk-fn">wolt</span> stats{'\n'}
               <span className="tk-mut"># Re-open without re-syncing</span>
               {'\n'}
-              <span className="tk-fn">wolt</span> stats <span className="tk-fl">--no-sync</span>{'\n'}
+              <span className="tk-fn">wolt</span> stats{' '}
+              <span className="tk-fl">--no-sync</span>
+              {'\n'}
               <span className="tk-mut"># Force a full re-scan of every order</span>
               {'\n'}
-              <span className="tk-fn">wolt</span> stats <span className="tk-fl">--resync</span>
+              <span className="tk-fn">wolt</span> stats{' '}
+              <span className="tk-fl">--resync</span>
             </code>
           </pre>
           <p className="stats__more">
-            <a href="/wolt-cli/docs/stats">Full stats reference →</a>
+            <a href={useBaseUrl('/docs/stats')}>Full stats reference →</a>
           </p>
         </div>
         <div className="stats__media">
-          <figure className="stats__shot stats__shot--primary">
+          <figure className="stats__shot">
             <img src={overview} alt="wolt stats dashboard overview" loading="lazy" />
-            <figcaption>Dashboard overview — spend by month, top venues, item leaderboards.</figcaption>
-          </figure>
-          <figure className="stats__shot stats__shot--secondary">
-            <img src={detail} alt="wolt stats detail view" loading="lazy" />
-            <figcaption>Per-venue and per-item drill-down for every purchase.</figcaption>
           </figure>
         </div>
       </div>
