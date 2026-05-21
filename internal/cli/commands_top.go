@@ -22,6 +22,11 @@ func newTopCommand(deps Dependencies) *cobra.Command {
 	var latSet bool
 	var lonSet bool
 	var limit int
+	var limitSet bool
+	var offset int
+	var offsetSet bool
+	var page int
+	var pageSet bool
 	var query string
 	var showHighlights bool
 	var woltPlusOnly bool
@@ -41,9 +46,15 @@ func newTopCommand(deps Dependencies) *cobra.Command {
 					return fmt.Errorf("invalid N: %q (expected a non-negative integer)", args[0])
 				}
 				limit = parsed
+				limitSet = true
 			}
 			if limit == 0 {
 				limit = 10
+				limitSet = true
+			}
+			resolvedOffset, err := resolvePageOffset(limit, limitSet, offset, offsetSet, page, pageSet)
+			if err != nil {
+				return err
 			}
 
 			format, err := parseOutputFormat(flags.Format)
@@ -82,11 +93,20 @@ func newTopCommand(deps Dependencies) *cobra.Command {
 			}
 
 			feed := observability.BuildDiscoveryFeed(sections, "", nil, woltPlusOnly)
-			rows := flattenTopVenues(asSlice(feed["sections"]), strings.ToLower(strings.TrimSpace(query)), limit)
+			// Flatten enough rows up-front to cover offset + limit, then
+			// trim via paginateFlatRows so --offset / --page work
+			// consistently with the rest of the CLI.
+			flatLimit := resolvedOffset + limit
+			if flatLimit < limit {
+				flatLimit = limit
+			}
+			rows := flattenTopVenues(asSlice(feed["sections"]), strings.ToLower(strings.TrimSpace(query)), flatLimit)
 			data := map[string]any{
-				"count":  len(rows),
-				"limit":  limit,
 				"venues": rows,
+			}
+			paginateFlatRows(data, "venues", &limit, resolvedOffset)
+			if pageSet {
+				data["page"] = page
 			}
 
 			if format == output.FormatTable {
@@ -104,6 +124,8 @@ func newTopCommand(deps Dependencies) *cobra.Command {
 	cmd.Flags().Float64Var(&lat, "lat", 0, "Latitude override. Provide together with --lon.")
 	cmd.Flags().Float64Var(&lon, "lon", 0, "Longitude override. Provide together with --lat.")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Number of venues to return (overrides positional N; default 10).")
+	cmd.Flags().IntVar(&offset, "offset", 0, "Offset returned venues (skips the first N in the flattened feed).")
+	cmd.Flags().IntVar(&page, "page", 0, "1-based page number (requires --limit; cannot be combined with --offset).")
 	cmd.Flags().StringVar(&query, "query", "", "Filter by venue name/tagline/top-offer substring (case-insensitive).")
 	cmd.Flags().BoolVar(&showHighlights, "show-highlights", false, "Append a Highlights column with venue_preview_items. Default: auto (show only when at least one row has data).")
 	cmd.Flags().BoolVar(&woltPlusOnly, "wolt-plus", false, "Only include Wolt+ venues.")
@@ -111,6 +133,9 @@ func newTopCommand(deps Dependencies) *cobra.Command {
 	cmd.PreRun = func(cmd *cobra.Command, _ []string) {
 		latSet = cmd.Flags().Changed("lat")
 		lonSet = cmd.Flags().Changed("lon")
+		limitSet = cmd.Flags().Changed("limit")
+		offsetSet = cmd.Flags().Changed("offset")
+		pageSet = cmd.Flags().Changed("page")
 	}
 	return cmd
 }

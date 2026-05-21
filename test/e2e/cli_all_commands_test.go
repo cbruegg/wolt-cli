@@ -727,6 +727,98 @@ func TestTopRejectsInvalidN(t *testing.T) {
 	}
 }
 
+func TestVenuesCategoriesSupportsPagination(t *testing.T) {
+	sections := []domain.Section{
+		{
+			Name:  "popular",
+			Title: "Popular",
+			Items: []domain.Item{
+				// Many tags → many distinct categories.
+				{Title: "Burger Spot", Link: domain.Link{Target: "v1"}, Venue: &domain.Venue{ID: "v1", Tags: []string{"american", "burger", "fast food"}}},
+				{Title: "Sushi Bar", Link: domain.Link{Target: "v2"}, Venue: &domain.Venue{ID: "v2", Tags: []string{"sushi", "japanese"}}},
+				{Title: "Pizza Place", Link: domain.Link{Target: "v3"}, Venue: &domain.Venue{ID: "v3", Tags: []string{"pizza", "italian"}}},
+			},
+		},
+	}
+	deps := cli.Dependencies{
+		Wolt: &mockWolt{
+			sectionsFunc: func(context.Context, domain.Location) ([]domain.Section, error) {
+				return sections, nil
+			},
+		},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 60.1, Lon: 24.9}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+
+	exitCode, out := runCLIWithDeps(t, deps, "venues", "categories", "--limit", "3", "--format", "json")
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
+	}
+	payload := mustJSON(t, out)
+	data := asMapPayload(t, payload["data"])
+	categories := asSlicePayload(t, data["categories"])
+	if len(categories) != 3 {
+		t.Fatalf("expected 3 categories (limit=3), got %d", len(categories))
+	}
+	totalAny := data["total"]
+	totalFloat, _ := totalAny.(float64)
+	if int(totalFloat) < 7 {
+		t.Fatalf("expected total >= 7 (all distinct tags), got %v", totalAny)
+	}
+	pagesAny := data["total_pages"]
+	pages, _ := pagesAny.(float64)
+	if int(pages) < 3 {
+		t.Fatalf("expected total_pages >= 3 for limit=3 across 7+ categories, got %v", pagesAny)
+	}
+
+	// Page 2 should return a different slice.
+	exitCode, outPage2 := runCLIWithDeps(t, deps, "venues", "categories", "--limit", "3", "--page", "2", "--format", "json")
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0 on page 2, got %d\noutput:\n%s", exitCode, outPage2)
+	}
+	page2 := asMapPayload(t, mustJSON(t, outPage2)["data"])
+	if int(page2["page"].(float64)) != 2 {
+		t.Fatalf("expected page=2 echoed, got %v", page2["page"])
+	}
+	if int(page2["offset"].(float64)) != 3 {
+		t.Fatalf("expected offset=3 derived from --page 2 --limit 3, got %v", page2["offset"])
+	}
+}
+
+func TestVenuesCategoriesTableRendersRows(t *testing.T) {
+	sections := []domain.Section{
+		{
+			Name: "popular",
+			Items: []domain.Item{
+				{Title: "Burger Spot", Link: domain.Link{Target: "v1"}, Venue: &domain.Venue{ID: "v1", Tags: []string{"burger"}}},
+			},
+		},
+	}
+	deps := cli.Dependencies{
+		Wolt: &mockWolt{
+			sectionsFunc: func(context.Context, domain.Location) ([]domain.Section, error) {
+				return sections, nil
+			},
+		},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 60.1, Lon: 24.9}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+	exitCode, out := runCLIWithDeps(t, deps, "venues", "categories")
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
+	}
+	if !strings.Contains(out, "Burger") {
+		t.Fatalf("expected category row to render with name, got:\n%s", out)
+	}
+	if !strings.Contains(out, "burger") {
+		t.Fatalf("expected category row to render with slug, got:\n%s", out)
+	}
+}
+
 func TestFeedSummaryFlagPrintsOneLinePerSection(t *testing.T) {
 	sections := []domain.Section{
 		{

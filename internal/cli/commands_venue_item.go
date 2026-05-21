@@ -89,6 +89,12 @@ func newVenueShowCommand(deps Dependencies) *cobra.Command {
 
 func newVenueCategoriesCommand(deps Dependencies) *cobra.Command {
 	var flags globalFlags
+	var limit int
+	var limitSet bool
+	var offset int
+	var offsetSet bool
+	var page int
+	var pageSet bool
 
 	cmd := &cobra.Command{
 		Use:   "categories <slug>",
@@ -125,6 +131,19 @@ func newVenueCategoriesCommand(deps Dependencies) *cobra.Command {
 			}
 
 			data := buildVenueCategoriesData(venueID, assortmentPayload)
+			resolvedOffset, err := resolvePageOffset(limit, limitSet, offset, offsetSet, page, pageSet)
+			if err != nil {
+				return err
+			}
+			var limitPtr *int
+			if limitSet {
+				limitPtr = &limit
+			}
+			paginateFlatRows(data, "categories", limitPtr, resolvedOffset)
+			if pageSet {
+				data["page"] = page
+			}
+
 			if format == output.FormatTable {
 				return writeTable(cmd, buildVenueCategoriesTable(data), flags.Output)
 			}
@@ -133,7 +152,15 @@ func newVenueCategoriesCommand(deps Dependencies) *cobra.Command {
 		},
 	}
 
+	cmd.Flags().IntVar(&limit, "limit", 0, "Limit returned categories")
+	cmd.Flags().IntVar(&offset, "offset", 0, "Offset returned categories")
+	cmd.Flags().IntVar(&page, "page", 0, "1-based page number (requires --limit; cannot be combined with --offset)")
 	addGlobalFlags(cmd, &flags)
+	cmd.PreRun = func(cmd *cobra.Command, _ []string) {
+		limitSet = cmd.Flags().Changed("limit")
+		offsetSet = cmd.Flags().Changed("offset")
+		pageSet = cmd.Flags().Changed("page")
+	}
 	return cmd
 }
 

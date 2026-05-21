@@ -9,8 +9,15 @@ func asMap(value any) map[string]any {
 	if value == nil {
 		return nil
 	}
-	if m, ok := value.(map[string]any); ok {
+	switch m := value.(type) {
+	case map[string]any:
 		return m
+	case map[string]string:
+		out := make(map[string]any, len(m))
+		for k, v := range m {
+			out[k] = v
+		}
+		return out
 	}
 	return nil
 }

@@ -12,6 +12,12 @@ func newDiscoverCategoriesCommand(deps Dependencies) *cobra.Command {
 	var lon float64
 	var latSet bool
 	var lonSet bool
+	var limit int
+	var limitSet bool
+	var offset int
+	var offsetSet bool
+	var page int
+	var pageSet bool
 
 	cmd := &cobra.Command{
 		Use:   "categories",
@@ -54,6 +60,19 @@ func newDiscoverCategoriesCommand(deps Dependencies) *cobra.Command {
 			}
 			data := observability.BuildCategoryList(sections)
 
+			resolvedOffset, err := resolvePageOffset(limit, limitSet, offset, offsetSet, page, pageSet)
+			if err != nil {
+				return err
+			}
+			var limitPtr *int
+			if limitSet {
+				limitPtr = &limit
+			}
+			paginateFlatRows(data, "categories", limitPtr, resolvedOffset)
+			if pageSet {
+				data["page"] = page
+			}
+
 			if format == output.FormatTable {
 				return writeTable(cmd, buildCategoryTable(data), flags.Output)
 			}
@@ -64,10 +83,16 @@ func newDiscoverCategoriesCommand(deps Dependencies) *cobra.Command {
 
 	cmd.Flags().Float64Var(&lat, "lat", 0, "Latitude override for location lookup. Provide together with --lon.")
 	cmd.Flags().Float64Var(&lon, "lon", 0, "Longitude override for location lookup. Provide together with --lat.")
+	cmd.Flags().IntVar(&limit, "limit", 0, "Limit returned categories")
+	cmd.Flags().IntVar(&offset, "offset", 0, "Offset returned categories")
+	cmd.Flags().IntVar(&page, "page", 0, "1-based page number (requires --limit; cannot be combined with --offset)")
 	addGlobalFlags(cmd, &flags)
 	cmd.PreRun = func(cmd *cobra.Command, _ []string) {
 		latSet = cmd.Flags().Changed("lat")
 		lonSet = cmd.Flags().Changed("lon")
+		limitSet = cmd.Flags().Changed("limit")
+		offsetSet = cmd.Flags().Changed("offset")
+		pageSet = cmd.Flags().Changed("page")
 	}
 	return cmd
 }

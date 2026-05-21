@@ -16,28 +16,40 @@ import (
 
 var woltVenueIDPattern = regexp.MustCompile(`^[a-fA-F0-9]{24}$`)
 
+type favoritesListOpts struct {
+	lat       float64
+	lon       float64
+	latSet    bool
+	lonSet    bool
+	limit     int
+	limitSet  bool
+	offset    int
+	offsetSet bool
+	page      int
+	pageSet   bool
+}
+
 func newProfileFavoritesCommand(deps Dependencies) *cobra.Command {
 	var flags globalFlags
-	var lat float64
-	var lon float64
-	var latSet bool
-	var lonSet bool
+	var opts favoritesListOpts
 
 	cmd := &cobra.Command{
 		Use:     "favorites",
 		Aliases: []string{"favourites"},
 		Short:   "List and manage favourite venues.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runProfileFavoritesList(cmd, deps, flags, lat, lon, latSet, lonSet)
+			return runProfileFavoritesList(cmd, deps, flags, opts)
 		},
 	}
 
-	cmd.Flags().Float64Var(&lat, "lat", 0, "Latitude override for favorites listing. Provide together with --lon.")
-	cmd.Flags().Float64Var(&lon, "lon", 0, "Longitude override for favorites listing. Provide together with --lat.")
+	bindFavoritesListFlags(cmd, &opts)
 	addGlobalFlags(cmd, &flags)
 	cmd.PreRun = func(cmd *cobra.Command, _ []string) {
-		latSet = cmd.Flags().Changed("lat")
-		lonSet = cmd.Flags().Changed("lon")
+		opts.latSet = cmd.Flags().Changed("lat")
+		opts.lonSet = cmd.Flags().Changed("lon")
+		opts.limitSet = cmd.Flags().Changed("limit")
+		opts.offsetSet = cmd.Flags().Changed("offset")
+		opts.pageSet = cmd.Flags().Changed("page")
 	}
 
 	cmd.AddCommand(newProfileFavoritesListCommand(deps))
@@ -48,37 +60,41 @@ func newProfileFavoritesCommand(deps Dependencies) *cobra.Command {
 
 func newProfileFavoritesListCommand(deps Dependencies) *cobra.Command {
 	var flags globalFlags
-	var lat float64
-	var lon float64
-	var latSet bool
-	var lonSet bool
+	var opts favoritesListOpts
 
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "Show favourite venues for the authenticated account.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runProfileFavoritesList(cmd, deps, flags, lat, lon, latSet, lonSet)
+			return runProfileFavoritesList(cmd, deps, flags, opts)
 		},
 	}
 
-	cmd.Flags().Float64Var(&lat, "lat", 0, "Latitude override for favorites listing. Provide together with --lon.")
-	cmd.Flags().Float64Var(&lon, "lon", 0, "Longitude override for favorites listing. Provide together with --lat.")
+	bindFavoritesListFlags(cmd, &opts)
 	addGlobalFlags(cmd, &flags)
 	cmd.PreRun = func(cmd *cobra.Command, _ []string) {
-		latSet = cmd.Flags().Changed("lat")
-		lonSet = cmd.Flags().Changed("lon")
+		opts.latSet = cmd.Flags().Changed("lat")
+		opts.lonSet = cmd.Flags().Changed("lon")
+		opts.limitSet = cmd.Flags().Changed("limit")
+		opts.offsetSet = cmd.Flags().Changed("offset")
+		opts.pageSet = cmd.Flags().Changed("page")
 	}
 	return cmd
+}
+
+func bindFavoritesListFlags(cmd *cobra.Command, opts *favoritesListOpts) {
+	cmd.Flags().Float64Var(&opts.lat, "lat", 0, "Latitude override for favorites listing. Provide together with --lon.")
+	cmd.Flags().Float64Var(&opts.lon, "lon", 0, "Longitude override for favorites listing. Provide together with --lat.")
+	cmd.Flags().IntVar(&opts.limit, "limit", 0, "Limit returned favourites")
+	cmd.Flags().IntVar(&opts.offset, "offset", 0, "Offset returned favourites")
+	cmd.Flags().IntVar(&opts.page, "page", 0, "1-based page number (requires --limit; cannot be combined with --offset)")
 }
 
 func runProfileFavoritesList(
 	cmd *cobra.Command,
 	deps Dependencies,
 	flags globalFlags,
-	lat float64,
-	lon float64,
-	latSet bool,
-	lonSet bool,
+	opts favoritesListOpts,
 ) error {
 	format, err := parseOutputFormat(flags.Format)
 	if err != nil {
@@ -92,11 +108,11 @@ func runProfileFavoritesList(
 
 	var latPtr *float64
 	var lonPtr *float64
-	if latSet {
-		latPtr = &lat
+	if opts.latSet {
+		latPtr = &opts.lat
 	}
-	if lonSet {
-		lonPtr = &lon
+	if opts.lonSet {
+		lonPtr = &opts.lon
 	}
 	location, profile, err := resolveLocation(
 		cmd.Context(),
@@ -131,7 +147,18 @@ func runProfileFavoritesList(
 	data := map[string]any{
 		"favorites": extractFavoriteVenues(payload),
 	}
-	data["count"] = len(asSlice(data["favorites"]))
+	resolvedOffset, err := resolvePageOffset(opts.limit, opts.limitSet, opts.offset, opts.offsetSet, opts.page, opts.pageSet)
+	if err != nil {
+		return err
+	}
+	var limitPtr *int
+	if opts.limitSet {
+		limitPtr = &opts.limit
+	}
+	paginateFlatRows(data, "favorites", limitPtr, resolvedOffset)
+	if opts.pageSet {
+		data["page"] = opts.page
+	}
 
 	if format == output.FormatTable {
 		return writeTable(cmd, buildProfileFavoritesTable(data), flags.Output)
