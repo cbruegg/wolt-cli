@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/mekedron/wolt-cli/internal/service/observability"
@@ -22,6 +23,7 @@ func newFeedCommand(deps Dependencies) *cobra.Command {
 	var perSectionLimit int
 	var query string
 	var showHighlights bool
+	var summary bool
 
 	cmd := &cobra.Command{
 		Use:   "feed",
@@ -79,6 +81,9 @@ func newFeedCommand(deps Dependencies) *cobra.Command {
 			}
 
 			if format == output.FormatTable {
+				if summary {
+					return writeTable(cmd, buildFeedSummaryTable(data), flags.Output)
+				}
 				effectiveHighlights := showHighlights
 				if !cmd.Flags().Changed("show-highlights") {
 					effectiveHighlights = anyFeedSectionHasHighlights(asSlice(data["sections"]))
@@ -96,6 +101,7 @@ func newFeedCommand(deps Dependencies) *cobra.Command {
 	cmd.Flags().IntVar(&perSectionLimit, "per-section", 6, "Max venues rendered per section in the table.")
 	cmd.Flags().StringVar(&query, "query", "", "Filter venues by name/tagline/top-offer substring (case-insensitive).")
 	cmd.Flags().BoolVar(&showHighlights, "show-highlights", true, "Append a Highlights column with venue_preview_items. Default: auto (show only when at least one row has data). Pass --show-highlights or --show-highlights=false to force.")
+	cmd.Flags().BoolVar(&summary, "summary", false, "Print one line per section (title, kind, count, top items) instead of full per-section tables.")
 	addGlobalFlags(cmd, &flags)
 	cmd.PreRun = func(cmd *cobra.Command, _ []string) {
 		latSet = cmd.Flags().Changed("lat")
@@ -224,6 +230,82 @@ func buildFeedTable(data map[string]any, showHighlights bool) string {
 		return output.RenderTable("Feed", []string{"Section"}, [][]string{{"(no venues)"}})
 	}
 	return strings.Join(chunks, "\n\n")
+}
+
+// buildFeedSummaryTable renders one line per section: title, kind,
+// count, and the first three names. Replaces the per-section tables
+// when the user passes --summary — the "what's on the home page?"
+// glance view that previously required jq.
+func buildFeedSummaryTable(data map[string]any) string {
+	sections := asSlice(data["sections"])
+	if len(sections) == 0 {
+		return output.RenderTable("Feed summary", []string{"Section"}, [][]string{{"(no sections)"}})
+	}
+	rows := make([][]string, 0, len(sections))
+	for _, raw := range sections {
+		section := asMap(raw)
+		if section == nil {
+			continue
+		}
+		title := strings.TrimSpace(asString(section["title"]))
+		if title == "" {
+			title = strings.TrimSpace(asString(section["name"]))
+		}
+		if title == "" {
+			title = "Section"
+		}
+		kind := strings.TrimSpace(asString(section["kind"]))
+		if kind == "" {
+			kind = "venues"
+		}
+		names := summaryNamesForSection(section, kind)
+		count := summaryCountForSection(section, kind)
+		rows = append(rows, []string{
+			title,
+			kind,
+			fmt.Sprintf("%d", count),
+			truncateForTable(joinTopN(names, 3, " · "), 60),
+		})
+	}
+	return output.RenderTable("Feed summary", []string{"Section", "Kind", "Count", "Top items"}, rows)
+}
+
+func summaryNamesForSection(section map[string]any, kind string) []string {
+	source := "items"
+	if kind == "brands" {
+		source = "brands"
+	}
+	entries := asSlice(section[source])
+	names := make([]string, 0, len(entries))
+	for _, raw := range entries {
+		entry := asMap(raw)
+		if entry == nil {
+			continue
+		}
+		name := strings.TrimSpace(asString(entry["name"]))
+		if name == "" {
+			continue
+		}
+		names = append(names, name)
+	}
+	return names
+}
+
+func summaryCountForSection(section map[string]any, kind string) int {
+	if kind == "brands" {
+		return len(asSlice(section["brands"]))
+	}
+	return len(asSlice(section["items"]))
+}
+
+func joinTopN(items []string, n int, sep string) string {
+	if len(items) == 0 {
+		return "-"
+	}
+	if len(items) <= n {
+		return strings.Join(items, sep)
+	}
+	return strings.Join(items[:n], sep) + sep + "…"
 }
 
 func buildBrandSummaryLine(brands []any) string {

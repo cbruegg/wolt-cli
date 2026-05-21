@@ -606,6 +606,71 @@ func TestFeedTableShowsHighlightsByDefault(t *testing.T) {
 	}
 }
 
+func TestFeedSummaryFlagPrintsOneLinePerSection(t *testing.T) {
+	sections := []domain.Section{
+		{
+			Name:  "FIN_NV_SB_popular-stores",
+			Title: "Popular stores",
+			Items: []domain.Item{
+				{Title: "Wolt Market", Link: domain.Link{Target: "woltmarket"}},
+				{Title: "K-Market", Link: domain.Link{Target: "k-market"}},
+				{Title: "Lidl", Link: domain.Link{Target: "lidl"}},
+				{Title: "Alepa", Link: domain.Link{Target: "alepa"}},
+			},
+		},
+		{
+			Name:  "dinner-venues",
+			Title: "Dinner near you",
+			Items: []domain.Item{
+				{Title: "Noodle Story Kamppi", Link: domain.Link{Target: "venue-1"}, Venue: &domain.Venue{ID: "venue-1", Slug: "noodle-story", Currency: "EUR"}},
+				{Title: "Putte's Bar & Pizza", Link: domain.Link{Target: "venue-2"}, Venue: &domain.Venue{ID: "venue-2", Slug: "puttes", Currency: "EUR"}},
+			},
+		},
+	}
+	deps := cli.Dependencies{
+		Wolt: &mockWolt{
+			sectionsFunc: func(context.Context, domain.Location) ([]domain.Section, error) {
+				return sections, nil
+			},
+		},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 60.1, Lon: 24.9}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+
+	exitCode, out := runCLIWithDeps(t, deps, "feed", "--summary")
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
+	}
+	if !strings.Contains(out, "Feed summary") {
+		t.Fatalf("expected Feed summary title, got:\n%s", out)
+	}
+	for _, want := range []string{"Section", "Kind", "Count", "Top items"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected summary header %q, got:\n%s", want, out)
+		}
+	}
+	// Brand section line carries kind=brands, count=4, top-3 names + ellipsis.
+	if !strings.Contains(out, "Popular stores") || !strings.Contains(out, "brands") {
+		t.Fatalf("expected brand section row, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Wolt Market · K-Market · Lidl · …") {
+		t.Fatalf("expected top-3 brand names with ellipsis, got:\n%s", out)
+	}
+	// Venue section: kind=venues, count=2, no ellipsis since len<=3.
+	if !strings.Contains(out, "Dinner near you") || !strings.Contains(out, "venues") {
+		t.Fatalf("expected venue section row, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Noodle Story Kamppi · Putte's Bar & Pizza") {
+		t.Fatalf("expected joined venue names, got:\n%s", out)
+	}
+	// Per-section venue tables should not appear in summary mode.
+	if strings.Contains(out, "Tagline") {
+		t.Fatalf("summary mode should not render per-section venue tables, got:\n%s", out)
+	}
+}
+
 func TestFeedRendersBrandCarouselAsOneLiner(t *testing.T) {
 	sections := []domain.Section{
 		{
