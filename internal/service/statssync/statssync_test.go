@@ -368,7 +368,11 @@ func TestOpenStoreRepairsLegacyZeroAmounts(t *testing.T) {
 	rawJSON := `{
 	    "total_price": 1609, "subtotal": 1609, "items_price": 2190,
 	    "delivery_price": 76, "service_fee": 76, "credits": 0, "tokens": 0,
-	    "venue_country": "FIN", "venue_address": "Piispansilta 10",
+	    "venue_id": "venue-bk-iso-omena",
+	    "venue_country": "FIN",
+	    "venue_full_address": "Piispansilta 10, 02230 Espoo, Finland",
+	    "venue_product_line": "restaurant",
+	    "delivery_location": {"city": "Espoo", "alias": "home"},
 	    "payments": [{"method": {"provider": "edenred", "type": "edenred"}}]
 	}`
 	_, _ = db1.Exec(`INSERT INTO users (id, email, created_at, updated_at) VALUES ('u1','u@example.com','2026-05-21T00:00:00Z','2026-05-21T00:00:00Z')`)
@@ -393,20 +397,40 @@ func TestOpenStoreRepairsLegacyZeroAmounts(t *testing.T) {
 	defer func() { _ = db2.Close() }()
 
 	var total, items, delivery, service, fees int
-	var venueCountry, venueAddress, provider, methodType sql.NullString
+	var venueID, venueCountry, venueAddress, venueProductLine sql.NullString
+	var deliveryCity, deliveryAlias, provider, methodType sql.NullString
 	row := db2.QueryRow(`
 		SELECT total_amount_minor, items_amount_minor, delivery_fee_minor,
-		       service_fee_minor, fees_minor, venue_country, venue_address,
+		       service_fee_minor, fees_minor,
+		       venue_id, venue_country, venue_address, venue_product_line,
+		       delivery_city, delivery_alias,
 		       payment_provider, payment_method_type
 		FROM orders WHERE purchase_id = 'pX'`)
-	if err := row.Scan(&total, &items, &delivery, &service, &fees, &venueCountry, &venueAddress, &provider, &methodType); err != nil {
+	if err := row.Scan(
+		&total, &items, &delivery, &service, &fees,
+		&venueID, &venueCountry, &venueAddress, &venueProductLine,
+		&deliveryCity, &deliveryAlias,
+		&provider, &methodType,
+	); err != nil {
 		t.Fatalf("scan repaired row: %v", err)
 	}
 	if total != 1609 || items != 2190 || delivery != 76 || service != 76 || fees != 152 {
 		t.Fatalf("repair did not populate amounts — total=%d items=%d delivery=%d service=%d fees=%d", total, items, delivery, service, fees)
 	}
-	if venueCountry.String != "FIN" || venueAddress.String != "Piispansilta 10" {
-		t.Fatalf("repair did not populate venue — country=%q address=%q", venueCountry.String, venueAddress.String)
+	if venueID.String != "venue-bk-iso-omena" {
+		t.Fatalf("repair did not populate venue_id — got %q", venueID.String)
+	}
+	if venueCountry.String != "FIN" {
+		t.Fatalf("repair did not populate venue_country — got %q", venueCountry.String)
+	}
+	if venueAddress.String != "Piispansilta 10, 02230 Espoo, Finland" {
+		t.Fatalf("repair did not populate venue_address — got %q", venueAddress.String)
+	}
+	if venueProductLine.String != "restaurant" {
+		t.Fatalf("repair did not populate venue_product_line — got %q", venueProductLine.String)
+	}
+	if deliveryCity.String != "Espoo" || deliveryAlias.String != "home" {
+		t.Fatalf("repair did not populate delivery — city=%q alias=%q", deliveryCity.String, deliveryAlias.String)
 	}
 	if provider.String != "edenred" || methodType.String != "edenred" {
 		t.Fatalf("repair did not populate payment — provider=%q type=%q", provider.String, methodType.String)
@@ -443,20 +467,28 @@ func TestSyncPersistsRealWoltAmountShape(t *testing.T) {
 	client := newFakeClient(pages)
 	client.detailByID = map[string]map[string]any{
 		"wolt-real-1": {
-			"order_number":   "WLT-EDEN-1",
-			"status":         "delivered",
-			"creation_time":  "20/05/2026, 17:33",
-			"delivery_time":  "20/05/2026, 18:10",
-			"currency":       "EUR",
-			"total_price":    1609,
-			"subtotal":       1609,
-			"items_price":    2190,
-			"delivery_price": 76,
-			"service_fee":    76,
-			"credits":        0,
-			"tokens":         0,
-			"venue_country":  "FIN",
-			"venue_address":  "Piispansilta 10",
+			"order_number":       "WLT-EDEN-1",
+			"status":             "delivered",
+			"creation_time":      "20/05/2026, 17:33",
+			"delivery_time":      "20/05/2026, 18:10",
+			"currency":           "EUR",
+			"total_price":        1609,
+			"subtotal":           1609,
+			"items_price":        2190,
+			"delivery_price":     76,
+			"service_fee":        76,
+			"credits":            0,
+			"tokens":             0,
+			"venue_id":           "venue-bk-iso-omena",
+			"venue_country":      "FIN",
+			"venue_address":      "Piispansilta 10",
+			"venue_full_address": "Piispansilta 10, 02230 Espoo, Finland",
+			"venue_product_line": "restaurant",
+			"delivery_method":    "homedelivery",
+			"delivery_location": map[string]any{
+				"city":  "Espoo",
+				"alias": "home",
+			},
 			"items": []any{
 				map[string]any{
 					"id":         "i1",
@@ -501,16 +533,24 @@ func TestSyncPersistsRealWoltAmountShape(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	var (
-		total, subtotal, items, delivery, service, fees, discount int
-		venueCountry, venueAddress, paymentProvider, paymentType  sql.NullString
+		total, subtotal, items, delivery, service, fees, discount       int
+		venueID, venueCountry, venueAddress, venueProductLine           sql.NullString
+		deliveryCity, deliveryAlias, paymentProvider, paymentMethodType sql.NullString
 	)
 	row := db.QueryRow(`
 		SELECT total_amount_minor, subtotal_minor, items_amount_minor,
 		       delivery_fee_minor, service_fee_minor, fees_minor,
-		       discount_amount_minor, venue_country, venue_address,
+		       discount_amount_minor,
+		       venue_id, venue_country, venue_address, venue_product_line,
+		       delivery_city, delivery_alias,
 		       payment_provider, payment_method_type
 		FROM orders WHERE purchase_id = ?`, "wolt-real-1")
-	if err := row.Scan(&total, &subtotal, &items, &delivery, &service, &fees, &discount, &venueCountry, &venueAddress, &paymentProvider, &paymentType); err != nil {
+	if err := row.Scan(
+		&total, &subtotal, &items, &delivery, &service, &fees, &discount,
+		&venueID, &venueCountry, &venueAddress, &venueProductLine,
+		&deliveryCity, &deliveryAlias,
+		&paymentProvider, &paymentMethodType,
+	); err != nil {
 		t.Fatalf("scan orders row: %v", err)
 	}
 	if total != 1609 || subtotal != 1609 || items != 2190 || delivery != 76 || service != 76 || fees != 152 {
@@ -519,11 +559,23 @@ func TestSyncPersistsRealWoltAmountShape(t *testing.T) {
 	if discount != 657 {
 		t.Fatalf("discount want 657, got %d", discount)
 	}
-	if venueCountry.String != "FIN" || venueAddress.String != "Piispansilta 10" {
-		t.Fatalf("venue mismatch — country=%q address=%q", venueCountry.String, venueAddress.String)
+	if venueID.String != "venue-bk-iso-omena" {
+		t.Fatalf("venue_id want venue-bk-iso-omena, got %q", venueID.String)
 	}
-	if paymentProvider.String != "edenred" || paymentType.String != "edenred" {
-		t.Fatalf("payment mismatch — provider=%q method_type=%q", paymentProvider.String, paymentType.String)
+	if venueCountry.String != "FIN" {
+		t.Fatalf("venue_country want FIN, got %q", venueCountry.String)
+	}
+	if venueAddress.String != "Piispansilta 10, 02230 Espoo, Finland" {
+		t.Fatalf("venue_address want full address, got %q", venueAddress.String)
+	}
+	if venueProductLine.String != "restaurant" {
+		t.Fatalf("venue_product_line want restaurant, got %q", venueProductLine.String)
+	}
+	if deliveryCity.String != "Espoo" || deliveryAlias.String != "home" {
+		t.Fatalf("delivery mismatch — city=%q alias=%q", deliveryCity.String, deliveryAlias.String)
+	}
+	if paymentProvider.String != "edenred" || paymentMethodType.String != "edenred" {
+		t.Fatalf("payment mismatch — provider=%q method_type=%q", paymentProvider.String, paymentMethodType.String)
 	}
 
 	var lineTotal int

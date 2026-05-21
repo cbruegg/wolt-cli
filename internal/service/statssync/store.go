@@ -198,7 +198,9 @@ func openStore(ctx context.Context, dbPath string) (*sql.DB, error) {
 // Costs one UPDATE statement when no legacy rows exist (the WHERE filter
 // matches nothing); a few hundred ms on a fully-broken DB of ~1k rows.
 func repairLegacyZeroAmounts(ctx context.Context, db *sql.DB) error {
-	_, err := db.ExecContext(ctx, `
+	// Amount columns + payment provider/type. WHERE matches only rows that
+	// the buggy version wrote zero into; a fresh sync targets nothing.
+	if _, err := db.ExecContext(ctx, `
 		UPDATE orders SET
 		  total_amount_minor = COALESCE(json_extract(raw_json, '$.total_price'),
 		                                json_extract(raw_json, '$.totals.total.amount'),    total_amount_minor),
@@ -214,22 +216,47 @@ func repairLegacyZeroAmounts(ctx context.Context, db *sql.DB) error {
 		                                json_extract(raw_json, '$.totals.credits.amount'),  credits_minor),
 		  tokens_minor       = COALESCE(json_extract(raw_json, '$.tokens'),
 		                                json_extract(raw_json, '$.totals.tokens.amount'),   tokens_minor),
-		  venue_country      = COALESCE(json_extract(raw_json, '$.venue_country'),
-		                                json_extract(raw_json, '$.venue.country'),          venue_country),
-		  venue_address      = COALESCE(json_extract(raw_json, '$.venue_full_address'),
-		                                json_extract(raw_json, '$.venue_address'),
-		                                json_extract(raw_json, '$.venue.address'),          venue_address),
 		  payment_provider   = COALESCE(json_extract(raw_json, '$.payments[0].method.provider'),
 		                                json_extract(raw_json, '$.payments[0].provider'),   payment_provider),
 		  payment_method_type= COALESCE(json_extract(raw_json, '$.payments[0].method.type'),
 		                                json_extract(raw_json, '$.payments[0].method_type'), payment_method_type)
 		WHERE total_amount_minor = 0
 		  AND COALESCE(json_extract(raw_json, '$.total_price'), 0) > 0
-	`)
-	if err != nil {
+	`); err != nil {
 		return err
 	}
-	_, err = db.ExecContext(ctx, `UPDATE orders SET fees_minor = delivery_fee_minor + service_fee_minor WHERE fees_minor <> delivery_fee_minor + service_fee_minor`)
+	// Venue + delivery descriptive columns. Backfill whenever the existing
+	// column is NULL/blank but raw_json has the value — covers both the
+	// "I just upgraded" path (everything blank) and the "partial fix"
+	// path (amounts fixed by an earlier migration, descriptors not).
+	if _, err := db.ExecContext(ctx, `
+		UPDATE orders SET
+		  venue_id           = COALESCE(NULLIF(venue_id, ''),
+		                                json_extract(raw_json, '$.venue_id'),
+		                                json_extract(raw_json, '$.venue.id')),
+		  venue_product_line = COALESCE(NULLIF(venue_product_line, ''),
+		                                json_extract(raw_json, '$.venue_product_line'),
+		                                json_extract(raw_json, '$.venue.product_line')),
+		  venue_country      = COALESCE(NULLIF(venue_country, ''),
+		                                json_extract(raw_json, '$.venue_country'),
+		                                json_extract(raw_json, '$.venue.country')),
+		  venue_address      = COALESCE(NULLIF(venue_address, ''),
+		                                json_extract(raw_json, '$.venue_full_address'),
+		                                json_extract(raw_json, '$.venue_address'),
+		                                json_extract(raw_json, '$.venue.address')),
+		  delivery_city      = COALESCE(NULLIF(delivery_city, ''),
+		                                json_extract(raw_json, '$.delivery_location.city'),
+		                                json_extract(raw_json, '$.delivery.city')),
+		  delivery_alias     = COALESCE(NULLIF(delivery_alias, ''),
+		                                json_extract(raw_json, '$.delivery_location.alias'),
+		                                json_extract(raw_json, '$.delivery.alias'))
+		WHERE venue_id IS NULL OR venue_id = ''
+		   OR venue_product_line IS NULL OR venue_product_line = ''
+		   OR delivery_city IS NULL OR delivery_city = ''
+	`); err != nil {
+		return err
+	}
+	_, err := db.ExecContext(ctx, `UPDATE orders SET fees_minor = delivery_fee_minor + service_fee_minor WHERE fees_minor <> delivery_fee_minor + service_fee_minor`)
 	return err
 }
 
@@ -344,19 +371,18 @@ func upsertOrderBundle(ctx context.Context, tx *sql.Tx, userID, purchaseID strin
 	}
 	iso := now.UTC().Format(time.RFC3339)
 
-	// Wolt returns money fields as flat top-level integers ("total_price",
-	// "items_price", "delivery_price", "service_fee", "credits", "tokens",
-	// "subtotal") with the venue address/country also flat ("venue_address",
-	// "venue_country"). The older nested totals.{key}.amount + venue.{key}
-	// shape only ever showed up in our test fixtures, so we read flat first
-	// and fall back to nested for backward compatibility.
+	// Wolt returns most fields flat at the top level of detail —
+	// venue_{id,name,country,product_line,address,full_address} and
+	// money fields as plain integers — while a few delivery-address fields
+	// live under detail.delivery_location.{city,alias,street,apartment}.
+	// The nested venue.* / delivery.* / totals.* shape that older code
+	// expected only ever existed in our test fixtures. Read flat first,
+	// then fall back to nested for backward compatibility with fixtures.
 	venue := asMap(detail["venue"])
 	delivery := asMap(detail["delivery"])
+	deliveryLocation := asMap(detail["delivery_location"])
 
-	venueName := firstNonNilString([]map[string]any{venue, summary}, "name", "venue_name")
-	if venueName == nil {
-		venueName = nullableString(summary["venue_name"])
-	}
+	venueName := firstNonNilString([]map[string]any{detail, venue, summary}, "venue_name", "name")
 
 	deliveryFee := extractDetailMinor(detail, "delivery_price", "delivery")
 	serviceFee := extractDetailMinor(detail, "service_fee", "service_fee")
@@ -439,13 +465,13 @@ func upsertOrderBundle(ctx context.Context, tx *sql.Tx, userID, purchaseID strin
 		sumCollectionAmounts(detail["discounts"]),
 		sumCollectionAmounts(detail["surcharges"]),
 		nullableString(detail["delivery_method"]),
-		nullableString(delivery["city"]),
-		nullableString(delivery["alias"]),
-		nullableString(venue["id"]),
+		firstNonNilString([]map[string]any{deliveryLocation, delivery}, "city"),
+		firstNonNilString([]map[string]any{deliveryLocation, delivery}, "alias"),
+		firstNonNilString([]map[string]any{detail, venue}, "venue_id", "id"),
 		venueName,
 		firstNonNilString([]map[string]any{detail, venue}, "venue_country", "country"),
 		firstNonNilString([]map[string]any{detail, venue}, "venue_full_address", "venue_address", "address"),
-		nullableString(venue["product_line"]),
+		firstNonNilString([]map[string]any{detail, venue}, "venue_product_line", "product_line"),
 		itemSummary,
 		paymentProvider(primaryPayment),
 		paymentMethodType(primaryPayment),
