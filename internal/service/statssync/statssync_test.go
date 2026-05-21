@@ -493,9 +493,9 @@ type fakeClient struct {
 	// refreshErr, when non-nil, is what the Refresher closure returns.
 	// Otherwise the Refresher swaps the access token to nextAccessToken
 	// (and refresh token to nextRefreshToken if set) and returns success.
-	refreshErr        error
-	nextAccessToken   string
-	nextRefreshToken  string
+	refreshErr       error
+	nextAccessToken  string
+	nextRefreshToken string
 }
 
 func (f *fakeClient) Refresher(_ context.Context, refreshToken string, _ woltgateway.AuthContext) (woltgateway.TokenRefreshResult, error) {
