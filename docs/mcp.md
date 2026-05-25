@@ -166,6 +166,69 @@ A tool will return a tool error if none of these can supply coordinates — the
 model is expected to either pass `lat`/`lon`, pass `address`, or instruct the
 user to `wolt login`.
 
+## Locale
+
+The MCP server speaks one [BCP-47](https://www.rfc-editor.org/rfc/rfc5646)
+locale per session. It controls the language of item names, menu copy, and
+other translated content returned by every tool — Wolt's API uses it to pick
+the venue's localized assortment.
+
+The locale flows to two places in each upstream Wolt request:
+
+- the `app-language` HTTP header
+- the `language` query parameter (and the assortment language for
+  `wolt_venue_search_items`, derived from the part before the `-`)
+
+**Default:** `en-FI` — English copy, Finland market.
+
+### Setting it
+
+Three equivalent forms, in precedence order:
+
+1. CLI flag (position-independent): `--locale fi-FI` or `--locale=fi-FI`
+2. Environment variable: `WOLT_LOCALE=fi-FI`
+3. Fallback to `en-FI`
+
+Pinned via `args` in your client config:
+
+```json
+{
+  "mcpServers": {
+    "wolt": {
+      "command": "wolt-mcp",
+      "args": ["--locale", "fi-FI"]
+    }
+  }
+}
+```
+
+Or via `env`, which is friendlier when the same setting should apply to other
+processes:
+
+```json
+{
+  "mcpServers": {
+    "wolt": {
+      "command": "wolt-mcp",
+      "env": { "WOLT_LOCALE": "fi-FI" }
+    }
+  }
+}
+```
+
+### Common values
+
+| Locale  | Use when                                                   |
+|---------|------------------------------------------------------------|
+| `en-FI` | English UI, Finland market (default)                       |
+| `fi-FI` | Finnish menu names and copy                                |
+| `sv-FI` | Swedish-language menus in Finland                          |
+| `et-EE` | Estonian, Estonia market                                   |
+| `de-DE` | German menus, Germany market                               |
+
+Any BCP-47 tag Wolt supports for the target market works — the server passes
+it through unchanged.
+
 ## Troubleshooting
 
 ### "Not logged in" errors
@@ -204,22 +267,6 @@ higher on slow networks:
     "wolt": {
       "command": "wolt-mcp",
       "env": { "WOLT_HTTP_MIN_INTERVAL_MS": "500" }
-    }
-  }
-}
-```
-
-### Locale
-
-The MCP server defaults to `en-FI`. Change it with `--locale` or the
-`WOLT_LOCALE` environment variable:
-
-```json
-{
-  "mcpServers": {
-    "wolt": {
-      "command": "wolt-mcp",
-      "args": ["--locale", "fi-FI"]
     }
   }
 }
