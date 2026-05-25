@@ -47,8 +47,6 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 
-	// Position-dependent arg parsing is intentional: only one --flag is ever
-	// passed by MCP clients, so a simple os.Args scan is sufficient.
 	locale := resolveLocale()
 
 	if len(os.Args) > 1 {
@@ -127,8 +125,10 @@ func resolveWoltRequestMinInterval() time.Duration {
 }
 
 func resolveLocale() string {
-	if len(os.Args) > 2 && os.Args[1] == "--locale" {
-		return strings.TrimSpace(os.Args[2])
+	for i, arg := range os.Args {
+		if arg == "--locale" && i+1 < len(os.Args) {
+			return strings.TrimSpace(os.Args[i+1])
+		}
 	}
 	raw := strings.TrimSpace(os.Getenv(localeEnv))
 	if raw != "" {
