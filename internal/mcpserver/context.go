@@ -33,6 +33,7 @@ type Deps struct {
 	Location LocationResolver
 	Config   ConfigStore
 	Version  string
+	Locale   string
 	Logger   *slog.Logger
 }
 
@@ -45,6 +46,7 @@ type ToolCtx struct {
 	location LocationResolver
 	config   ConfigStore
 	version  string
+	locale   string
 	logger   *slog.Logger
 }
 
@@ -59,6 +61,7 @@ func newToolCtx(deps Deps) *ToolCtx {
 		location: deps.Location,
 		config:   deps.Config,
 		version:  deps.Version,
+		locale:   deps.Locale,
 		logger:   logger,
 	}
 }

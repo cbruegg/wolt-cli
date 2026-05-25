@@ -302,7 +302,7 @@ func newVenueMenuCommand(deps Dependencies) *cobra.Command {
 					deps,
 					slug,
 					strings.TrimSpace(query),
-					resolveAssortmentLanguage(flags.Locale),
+					domain.ResolveAssortmentLanguage(flags.Locale),
 					auth,
 				)
 				if err != nil {
@@ -407,7 +407,7 @@ func newVenueMenuCommand(deps Dependencies) *cobra.Command {
 					deps,
 					slug,
 					categorySlug,
-					resolveAssortmentLanguage(flags.Locale),
+					domain.ResolveAssortmentLanguage(flags.Locale),
 					auth,
 				)
 				if err != nil {
@@ -438,7 +438,7 @@ func newVenueMenuCommand(deps Dependencies) *cobra.Command {
 						cmd.Context(),
 						deps,
 						slug,
-						resolveAssortmentLanguage(flags.Locale),
+						domain.ResolveAssortmentLanguage(flags.Locale),
 						auth,
 						assortmentPayload,
 						derefPositiveInt(limitPtr),
@@ -531,17 +531,6 @@ func derefPositiveInt(value *int) int {
 
 func isAssortmentPartial(payload map[string]any) bool {
 	return strings.EqualFold(strings.TrimSpace(asString(payload["loading_strategy"])), "partial")
-}
-
-func resolveAssortmentLanguage(locale string) string {
-	language := strings.TrimSpace(locale)
-	if idx := strings.Index(language, "-"); idx >= 0 {
-		language = strings.TrimSpace(language[:idx])
-	}
-	if language == "" {
-		return "en"
-	}
-	return language
 }
 
 func newVenueHoursCommand(deps Dependencies) *cobra.Command {

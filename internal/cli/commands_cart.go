@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/mekedron/wolt-cli/internal/domain"
 	woltgateway "github.com/mekedron/wolt-cli/internal/gateway/wolt"
 	"github.com/mekedron/wolt-cli/internal/service/output"
 	"github.com/spf13/cobra"
@@ -200,7 +201,7 @@ func newCartAddCommand(deps Dependencies) *cobra.Command {
 					slugForLookup,
 					venueID,
 					nameQuery,
-					resolveAssortmentLanguage(flags.Locale),
+					domain.ResolveAssortmentLanguage(flags.Locale),
 					auth,
 				)
 				if lookupErr != nil {
