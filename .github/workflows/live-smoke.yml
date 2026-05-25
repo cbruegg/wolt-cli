@@ -16,9 +16,14 @@ name: Live smoke (weekly)
 # lantern, etc.). A synthetic config with only __wtoken / __wrtoken
 # returns 401 "session expired" even with valid tokens.
 #
-# Rotation caveat: if Wolt rotates the refresh token on every use,
-# the secret will be stale after the first run. Re-seed with the
-# same one-liner above.
+# Optional repository secret (recommended — makes the smoke self-healing):
+#   WOLT_SMOKE_WRITE_PAT  fine-grained PAT, scope: Secrets=write +
+#                         Metadata=read, on this repo only.
+# When set, the workflow writes the post-run ~/.wolt/.wolt-config.json
+# back to WOLT_SMOKE_CONFIG_JSON. Wolt rotates the refresh token on
+# every successful refresh, so without this write-back the secret goes
+# stale after the first run. Use a dedicated CI-only Wolt account so
+# local CLI activity doesn't interfere with the rotated CI session.
 
 on:
   schedule:
@@ -109,11 +114,50 @@ jobs:
             fi
           } >>"${GITHUB_STEP_SUMMARY}"
 
+      - name: Persist rotated config back to secret
+        if: always()
+        env:
+          # Separate PAT, not GITHUB_TOKEN — the default Actions token
+          # cannot write repository secrets. Fine-grained PAT scoped to
+          # this repo with Secrets=write + Metadata=read is sufficient.
+          GH_TOKEN: ${{ secrets.WOLT_SMOKE_WRITE_PAT }}
+        run: |
+          # Wolt rotates the refresh token on every successful refresh.
+          # The CLI persists the rotated tokens to ~/.wolt/.wolt-config.json
+          # via upsertProfileTokens; mirror that file back into the secret
+          # so the next run starts with the live RT instead of a stale one.
+          #
+          # Runs on always() rather than success() because a partial smoke
+          # failure (e.g., one endpoint contract drifted) doesn't undo the
+          # auth refresh — we still want to preserve the rotated tokens.
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::warning::WOLT_SMOKE_WRITE_PAT not set; secret rotation skipped. The secret will go stale after this run and need a manual re-seed (see workflow header)."
+            exit 0
+          fi
+          cfg="${HOME}/.wolt/.wolt-config.json"
+          if [ ! -s "${cfg}" ]; then
+            echo "::warning::No config on disk at ${cfg}; skipping write-back."
+            exit 0
+          fi
+          # Don't poison the secret if the file got truncated, the access
+          # token never materialised, or the smoke script's seed step
+          # failed mid-write.
+          if ! jq -e '.account.wtoken | type == "string" and length > 100' "${cfg}" >/dev/null 2>&1; then
+            echo "::warning::Config at ${cfg} failed structural check; skipping write-back."
+            exit 0
+          fi
+          if ! jq -e '.account.wrefresh_token | type == "string" and length > 10' "${cfg}" >/dev/null 2>&1; then
+            echo "::warning::Config at ${cfg} has no usable refresh_token; skipping write-back."
+            exit 0
+          fi
+          gh secret set WOLT_SMOKE_CONFIG_JSON --repo "${GITHUB_REPOSITORY}" <"${cfg}"
+          echo "::notice::WOLT_SMOKE_CONFIG_JSON refreshed with rotated tokens."
+
       - name: Wipe local smoke outputs
         if: always()
         # Belt-and-braces: prevent any later step (or future workflow
         # change) from accidentally uploading them as artifacts.
-        run: rm -rf /tmp/wolt-smoke
+        run: rm -rf /tmp/wolt-smoke ~/.wolt
 
       - name: Open or update tracker issue on failure
         if: failure()
@@ -131,10 +175,11 @@ jobs:
 
           - Run: ${run_url}
           - Likely causes (in rough order of frequency):
-            1. \`WOLT_SMOKE_CONFIG_JSON\` has gone stale (tokens / cookies rotated). Re-seed from a logged-in machine:
+            1. \`WOLT_SMOKE_CONFIG_JSON\` has gone stale (refresh token revoked Wolt-side, or local CLI use rotated it out from under CI). Re-seed from a logged-in machine — ideally a CI-dedicated Wolt account so local activity stops invalidating it:
                \`\`\`
                wolt status >/dev/null && gh secret set WOLT_SMOKE_CONFIG_JSON < ~/.wolt/.wolt-config.json
                \`\`\`
+               If \`WOLT_SMOKE_WRITE_PAT\` isn't configured, every successful run also leaves the secret stale for the next one — see the workflow header for the one-time PAT setup.
             2. Wolt changed an endpoint contract (the smoke is doing its job — fix the gateway parser).
             3. Transient Wolt 5xx / 429 burst → rerun via Actions → Live smoke (weekly) → Run workflow.
 
