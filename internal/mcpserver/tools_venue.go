@@ -7,6 +7,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mekedron/wolt-cli/internal/domain"
 	"github.com/mekedron/wolt-cli/internal/service/observability"
 )
 
@@ -227,7 +228,7 @@ func (tc *ToolCtx) handleVenueSearchItems(ctx context.Context, _ *mcp.CallToolRe
 	if strings.TrimSpace(in.Query) == "" {
 		return nil, VenueSearchItemsOutput{}, toolErrf("query is required")
 	}
-	language := resolveAssortmentLanguage(tc.locale)
+	language := domain.ResolveAssortmentLanguage(tc.locale)
 	payload, err := tc.wolt.AssortmentItemsSearchByVenueSlug(ctx, firstNonEmpty(ref.Slug, in.Venue), in.Query, language, tc.optionalAuth(ctx))
 	if err != nil {
 		return nil, VenueSearchItemsOutput{}, toolErr(err)
@@ -290,15 +291,4 @@ func filterMenuItemsByName(data map[string]any, needle string) {
 		}
 	}
 	data["items"] = filtered
-}
-
-func resolveAssortmentLanguage(locale string) string {
-	language := strings.TrimSpace(locale)
-	if idx := strings.Index(language, "-"); idx >= 0 {
-		language = strings.TrimSpace(language[:idx])
-	}
-	if language == "" {
-		return "en"
-	}
-	return language
 }
