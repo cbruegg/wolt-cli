@@ -209,6 +209,22 @@ higher on slow networks:
 }
 ```
 
+### Locale
+
+The MCP server defaults to `en-FI`. Change it with `--locale` or the
+`WOLT_LOCALE` environment variable:
+
+```json
+{
+  "mcpServers": {
+    "wolt": {
+      "command": "wolt-mcp",
+      "args": ["--locale", "fi-FI"]
+    }
+  }
+}
+```
+
 ## Implementation notes
 
 - Built on `github.com/modelcontextprotocol/go-sdk` v1.6.0 (official Anthropic SDK).

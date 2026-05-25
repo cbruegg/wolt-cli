@@ -34,6 +34,8 @@ var version = "dev"
 const (
 	defaultWoltHTTPMinInterval = 220 * time.Millisecond
 	woltHTTPMinIntervalEnv     = "WOLT_HTTP_MIN_INTERVAL_MS"
+	defaultLocale              = "en-FI"
+	localeEnv                  = "WOLT_LOCALE"
 )
 
 func main() {
@@ -45,6 +47,8 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 
+	locale := resolveLocale()
+
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "--version", "-v", "version":
@@ -52,6 +56,13 @@ func main() {
 			return
 		case "--help", "-h", "help":
 			printHelp()
+			return
+		case "--locale":
+			if len(os.Args) > 2 {
+				fmt.Println(strings.TrimSpace(os.Args[2]))
+			} else {
+				fmt.Println(locale)
+			}
 			return
 		}
 	}
@@ -64,6 +75,7 @@ func main() {
 
 	wolt := woltgateway.NewClient(
 		woltgateway.WithRequestMinInterval(resolveWoltRequestMinInterval()),
+		woltgateway.WithLocale(locale),
 	)
 
 	deps := mcpserver.Deps{
@@ -72,6 +84,7 @@ func main() {
 		Location: locationgateway.NewClient(),
 		Config:   store,
 		Version:  version,
+		Locale:   locale,
 		Logger:   logger,
 	}
 
@@ -92,6 +105,11 @@ Usage:
   wolt-mcp              Run the MCP server over stdio.
   wolt-mcp --version    Print version and exit.
   wolt-mcp --help       Print this message and exit.
+  wolt-mcp --locale     Print the active locale and exit.
+
+Options:
+  --locale <bcp47>      Response locale in BCP-47 format (default: en-FI).
+                        Can also be set via the WOLT_LOCALE environment variable.
 
 Wire into an MCP client (Claude Desktop, Claude Code, Cursor) with:
 
@@ -112,4 +130,15 @@ func resolveWoltRequestMinInterval() time.Duration {
 		return defaultWoltHTTPMinInterval
 	}
 	return time.Duration(ms) * time.Millisecond
+}
+
+func resolveLocale() string {
+	if len(os.Args) > 2 && os.Args[1] == "--locale" {
+		return strings.TrimSpace(os.Args[2])
+	}
+	raw := strings.TrimSpace(os.Getenv(localeEnv))
+	if raw != "" {
+		return raw
+	}
+	return defaultLocale
 }
