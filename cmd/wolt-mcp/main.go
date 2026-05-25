@@ -47,6 +47,8 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 
+	// Position-dependent arg parsing is intentional: only one --flag is ever
+	// passed by MCP clients, so a simple os.Args scan is sufficient.
 	locale := resolveLocale()
 
 	if len(os.Args) > 1 {
@@ -56,13 +58,6 @@ func main() {
 			return
 		case "--help", "-h", "help":
 			printHelp()
-			return
-		case "--locale":
-			if len(os.Args) > 2 {
-				fmt.Println(strings.TrimSpace(os.Args[2]))
-			} else {
-				fmt.Println(locale)
-			}
 			return
 		}
 	}
@@ -105,7 +100,6 @@ Usage:
   wolt-mcp              Run the MCP server over stdio.
   wolt-mcp --version    Print version and exit.
   wolt-mcp --help       Print this message and exit.
-  wolt-mcp --locale     Print the active locale and exit.
 
 Options:
   --locale <bcp47>      Response locale in BCP-47 format (default: en-FI).
