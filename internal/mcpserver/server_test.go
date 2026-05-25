@@ -184,6 +184,90 @@ func TestResolveLocationRejectsAddressWithLatLon(t *testing.T) {
 	}
 }
 
+func TestNewToolCtxPropagatesLocaleFromDeps(t *testing.T) {
+	cases := []struct {
+		name   string
+		locale string
+		want   string
+	}{
+		{name: "BCP-47 locale propagates verbatim", locale: "fi-FI", want: "fi-FI"},
+		{name: "bare language propagates", locale: "sv", want: "sv"},
+		{name: "empty locale propagates as empty string", locale: "", want: ""},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := newToolCtx(Deps{
+				Wolt:     &stubWolt{},
+				Profiles: &stubProfiles{},
+				Location: &stubLocation{},
+				Config:   &stubConfig{},
+				Locale:   tc.locale,
+			})
+			if ctx.locale != tc.want {
+				t.Errorf("ToolCtx.locale = %q, want %q", ctx.locale, tc.want)
+			}
+		})
+	}
+}
+
+func TestVenueSearchItemsUsesConfiguredLocale(t *testing.T) {
+	cases := []struct {
+		name         string
+		locale       string
+		wantLanguage string
+	}{
+		{name: "fi-FI -> fi", locale: "fi-FI", wantLanguage: "fi"},
+		{name: "sv-SE -> sv", locale: "sv-SE", wantLanguage: "sv"},
+		{name: "bare en passes through", locale: "en", wantLanguage: "en"},
+		{name: "empty locale defaults to en", locale: "", wantLanguage: "en"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			gotLanguage := ""
+			callCount := 0
+			wolt := &stubWolt{
+				assortmentSearchFn: func(_ context.Context, _ string, _ string, language string, _ woltgateway.AuthContext) (map[string]any, error) {
+					callCount++
+					gotLanguage = language
+					return map[string]any{"items": []any{}}, nil
+				},
+			}
+			srv, cs := connectInMemory(t, Deps{
+				Wolt:     wolt,
+				Profiles: &stubProfiles{},
+				Location: &stubLocation{},
+				Config:   &stubConfig{},
+				Locale:   tc.locale,
+			})
+			defer func() { _ = cs.Close() }()
+			_ = srv
+
+			res, err := cs.CallTool(ctx, &mcp.CallToolParams{
+				Name: "wolt_venue_search_items",
+				Arguments: map[string]any{
+					"venue": "test-venue-slug",
+					"query": "pizza",
+				},
+			})
+			if err != nil {
+				t.Fatalf("CallTool: %v", err)
+			}
+			if res.IsError {
+				t.Fatalf("expected success, got error result: %v", textContent(res))
+			}
+			if callCount != 1 {
+				t.Fatalf("AssortmentItemsSearchByVenueSlug called %d times, want 1", callCount)
+			}
+			if gotLanguage != tc.wantLanguage {
+				t.Errorf("language passed to gateway = %q, want %q", gotLanguage, tc.wantLanguage)
+			}
+		})
+	}
+}
+
 func TestTokenExpiredHandlesJWT(t *testing.T) {
 	// JWT with exp=1700000000 (2023-11-14 — in the past). Header.payload.sig
 	// where payload is {"exp":1700000000}.
@@ -235,10 +319,11 @@ func textContent(res *mcp.CallToolResult) string {
 // ---------------- stubs ----------------
 
 type stubWolt struct {
-	sectionsFn   func(context.Context, domain.Location) ([]domain.Section, error)
-	itemsFn      func(context.Context, domain.Location) ([]domain.Item, error)
-	userMeFn     func(context.Context, woltgateway.AuthContext) (map[string]any, error)
-	restaurantFn func(context.Context, string) (*domain.Restaurant, error)
+	sectionsFn         func(context.Context, domain.Location) ([]domain.Section, error)
+	itemsFn            func(context.Context, domain.Location) ([]domain.Item, error)
+	userMeFn           func(context.Context, woltgateway.AuthContext) (map[string]any, error)
+	restaurantFn       func(context.Context, string) (*domain.Restaurant, error)
+	assortmentSearchFn func(context.Context, string, string, string, woltgateway.AuthContext) (map[string]any, error)
 }
 
 func (s *stubWolt) FrontPage(context.Context, domain.Location) (map[string]any, error) {
@@ -280,7 +365,10 @@ func (s *stubWolt) AssortmentCategoryByVenueSlug(context.Context, string, string
 func (s *stubWolt) AssortmentItemsByVenueSlug(context.Context, string, []string, woltgateway.AuthContext) (map[string]any, error) {
 	return map[string]any{}, nil
 }
-func (s *stubWolt) AssortmentItemsSearchByVenueSlug(context.Context, string, string, string, woltgateway.AuthContext) (map[string]any, error) {
+func (s *stubWolt) AssortmentItemsSearchByVenueSlug(ctx context.Context, slug string, query string, language string, auth woltgateway.AuthContext) (map[string]any, error) {
+	if s.assortmentSearchFn != nil {
+		return s.assortmentSearchFn(ctx, slug, query, language, auth)
+	}
 	return map[string]any{}, nil
 }
 func (s *stubWolt) VenueContentByVenueSlug(context.Context, string, string, woltgateway.AuthContext) (map[string]any, error) {

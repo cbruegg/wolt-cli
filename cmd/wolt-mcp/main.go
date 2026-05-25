@@ -125,9 +125,15 @@ func resolveWoltRequestMinInterval() time.Duration {
 }
 
 func resolveLocale() string {
-	for i, arg := range os.Args {
-		if arg == "--locale" && i+1 < len(os.Args) {
+	const flag = "--locale"
+	// Start at 1 to skip the program name in os.Args[0].
+	for i := 1; i < len(os.Args); i++ {
+		arg := os.Args[i]
+		if arg == flag && i+1 < len(os.Args) {
 			return strings.TrimSpace(os.Args[i+1])
+		}
+		if value, ok := strings.CutPrefix(arg, flag+"="); ok {
+			return strings.TrimSpace(value)
 		}
 	}
 	raw := strings.TrimSpace(os.Getenv(localeEnv))
