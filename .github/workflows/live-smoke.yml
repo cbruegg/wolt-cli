@@ -38,6 +38,7 @@ concurrency:
 
 jobs:
   smoke:
+    if: github.repository == 'mekedron/wolt-cli'
     name: Smoke read-only endpoints
     runs-on: ubuntu-latest
     timeout-minutes: 10
