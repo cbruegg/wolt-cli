@@ -5,6 +5,14 @@
 `wolt-cli` is an unofficial community Go CLI for interacting with Wolt endpoints from a terminal.
 It is not affiliated with Wolt. Use it at your own responsibility.
 
+<p align="center">
+  <a href="#local-stats-dashboard">
+    <img src="docs-site/static/img/stats/dashboard-overview.png" alt="wolt stats — local order-history dashboard" width="900" />
+  </a>
+  <br />
+  <sub>Run <code>wolt stats</code> to explore your own order history locally — see the <a href="#local-stats-dashboard">Local Stats Dashboard</a> section.</sub>
+</p>
+
 ## What It Covers
 
 - discovery feed grouped by section (`wolt feed`), with `--summary` for a one-line-per-section overview
@@ -219,10 +227,6 @@ syncs your orders into a local SQLite file, starts a small embedded HTTP
 server, and opens your browser. There is no Node.js install step — the
 dashboard is shipped as a static HTML/JS/WASM bundle, and the sync runs
 inside `wolt-cli` itself.
-
-<p align="center">
-  <img src="docs-site/static/img/stats/dashboard-overview.png" alt="wolt stats dashboard overview" width="900" />
-</p>
 
 ```bash
 # All-in-one. First run downloads the bundle (~1.5 MB) and the full order

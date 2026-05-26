@@ -12,7 +12,7 @@ at `http://127.0.0.1:5173`, and opens your browser. Nothing leaves your
 machine — the dashboard is a static SvelteKit app reading the SQLite file in
 the browser via sql.js.
 
-![wolt stats dashboard overview](pathname:///img/stats/dashboard-overview.png)
+![wolt stats dashboard overview](../docs-site/static/img/stats/dashboard-overview.png)
 
 ## Quick start
 
@@ -47,7 +47,9 @@ From those rows the dashboard derives spend by month, top venues, item
 leaderboards, weekday/hour-of-day patterns, average order size, delivery-fee
 breakdowns, and more. The full schema lives in `internal/service/statssync/store.go`.
 
-![per-venue and per-item drill-down](pathname:///img/stats/dashboard-detail.png)
+![per-venue and per-item drill-down](../docs-site/static/img/stats/dashboard-detail.png)
+
+![one dish over time — price drift and repeat frequency](../docs-site/static/img/stats/dashboard-product.png)
 
 ## Where data lives
 
