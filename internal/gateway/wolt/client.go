@@ -930,7 +930,13 @@ func (c *Client) CheckoutPreview(ctx context.Context, payload map[string]any, au
 }
 
 // RefreshAccessToken exchanges refresh token for a new access token pair.
+// Mirrors what wolt.com's web app sends — body-only. The __wtoken/__wrtoken
+// cookies are host-only on wolt.com, so the browser never ships them to
+// authentication.wolt.com either. The auth argument is kept in the signature
+// for forward-compatibility (locale headers etc.) but its Cookies field is
+// intentionally NOT forwarded.
 func (c *Client) RefreshAccessToken(ctx context.Context, refreshToken string, auth AuthContext) (TokenRefreshResult, error) {
+	_ = auth // see comment above
 	refreshToken = strings.TrimSpace(refreshToken)
 	if refreshToken == "" {
 		return TokenRefreshResult{}, fmt.Errorf("refresh token is required")
@@ -944,9 +950,6 @@ func (c *Client) RefreshAccessToken(ctx context.Context, refreshToken string, au
 		"Content-Type": "application/x-www-form-urlencoded",
 		"Accept":       "application/json",
 	}, nil)
-	if len(auth.Cookies) > 0 {
-		headers["Cookie"] = strings.Join(auth.Cookies, "; ")
-	}
 
 	res, err := c.doRequest(
 		ctx,

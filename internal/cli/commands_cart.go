@@ -81,7 +81,7 @@ func newCartShowCommand(deps Dependencies) *cobra.Command {
 				},
 			)
 			if err != nil {
-				return emitUpstreamError(cmd, format, profile, flags.Locale, flags.Output, flags.Verbose, err)
+				return emitUpstreamError(cmd, format, profile, flags.Locale, flags.Output, flags.Verbose, err, authWarnings...)
 			}
 			data, warnings := buildCartState(page, venueID)
 			warnings = append(warnings, authWarnings...)
@@ -401,7 +401,7 @@ func newCartAddCommand(deps Dependencies) *cobra.Command {
 				},
 			)
 			if err != nil {
-				return emitUpstreamError(cmd, format, profile, flags.Locale, flags.Output, flags.Verbose, err)
+				return emitUpstreamError(cmd, format, profile, flags.Locale, flags.Output, flags.Verbose, err, append(append([]string{}, warnings...), authWarnings...)...)
 			}
 
 			total := map[string]any{
@@ -505,7 +505,7 @@ func newCartCountCommand(deps Dependencies) *cobra.Command {
 				},
 			)
 			if err != nil {
-				return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, err)
+				return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, err, authWarnings...)
 			}
 			data := map[string]any{"count": asInt(payload["count"])}
 			if format == output.FormatTable {
@@ -584,7 +584,7 @@ func newCartRemoveCommand(deps Dependencies) *cobra.Command {
 				},
 			)
 			if err != nil {
-				return emitUpstreamError(cmd, format, profile, flags.Locale, flags.Output, flags.Verbose, err)
+				return emitUpstreamError(cmd, format, profile, flags.Locale, flags.Output, flags.Verbose, err, authWarnings...)
 			}
 			selected, _, selectionWarnings := selectBasketWithMeta(page, venueID)
 			if selected == nil {
@@ -656,7 +656,7 @@ func newCartRemoveCommand(deps Dependencies) *cobra.Command {
 						return deps.Wolt.DeleteBaskets(cmd.Context(), []string{basketID}, authCtx)
 					},
 				); err != nil {
-					return emitUpstreamError(cmd, format, profile, flags.Locale, flags.Output, flags.Verbose, err)
+					return emitUpstreamError(cmd, format, profile, flags.Locale, flags.Output, flags.Verbose, err, authWarnings...)
 				}
 			} else {
 				removePayload := map[string]any{
@@ -675,7 +675,7 @@ func newCartRemoveCommand(deps Dependencies) *cobra.Command {
 						return deps.Wolt.AddToBasket(cmd.Context(), removePayload, authCtx)
 					},
 				); err != nil {
-					return emitUpstreamError(cmd, format, profile, flags.Locale, flags.Output, flags.Verbose, err)
+					return emitUpstreamError(cmd, format, profile, flags.Locale, flags.Output, flags.Verbose, err, authWarnings...)
 				}
 			}
 
@@ -799,7 +799,7 @@ func newCartClearCommand(deps Dependencies) *cobra.Command {
 				},
 			)
 			if err != nil {
-				return emitUpstreamError(cmd, format, profile, flags.Locale, flags.Output, flags.Verbose, err)
+				return emitUpstreamError(cmd, format, profile, flags.Locale, flags.Output, flags.Verbose, err, authWarnings...)
 			}
 
 			basketIDs := []string{}
@@ -840,7 +840,7 @@ func newCartClearCommand(deps Dependencies) *cobra.Command {
 					return deps.Wolt.DeleteBaskets(cmd.Context(), basketIDs, authCtx)
 				},
 			); err != nil {
-				return emitUpstreamError(cmd, format, profile, flags.Locale, flags.Output, flags.Verbose, err)
+				return emitUpstreamError(cmd, format, profile, flags.Locale, flags.Output, flags.Verbose, err, authWarnings...)
 			}
 
 			clearedIDs := make([]any, 0, len(basketIDs))

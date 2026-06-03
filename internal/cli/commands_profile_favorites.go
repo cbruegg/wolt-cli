@@ -141,7 +141,7 @@ func runProfileFavoritesList(
 		},
 	)
 	if err != nil {
-		return emitUpstreamError(cmd, format, profile, flags.Locale, flags.Output, flags.Verbose, err)
+		return emitUpstreamError(cmd, format, profile, flags.Locale, flags.Output, flags.Verbose, err, authWarnings...)
 	}
 
 	data := map[string]any{
@@ -232,7 +232,7 @@ func runFavoriteVenueMutation(
 		},
 	)
 	if err != nil {
-		return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, err)
+		return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, err, authWarnings...)
 	}
 
 	data := map[string]any{

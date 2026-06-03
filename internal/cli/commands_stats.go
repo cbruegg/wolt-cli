@@ -155,7 +155,7 @@ func runStats(cmd *cobra.Command, deps Dependencies, flags globalFlags, opts sta
 		)
 		warnings = append(warnings, authWarnings...)
 		if userErr != nil {
-			return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, userErr)
+			return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, userErr, authWarnings...)
 		}
 		user := asMap(userPayload["user"])
 		email = strings.TrimSpace(asString(user["email"]))
@@ -173,7 +173,7 @@ func runStats(cmd *cobra.Command, deps Dependencies, flags globalFlags, opts sta
 			Verbose:     flags.Verbose,
 			Refresher:   deps.Wolt.RefreshAccessToken,
 			OnAuthRotated: func(updated woltgateway.AuthContext) error {
-				return upsertProfileTokens(ctx, deps, profileName, updated.WToken, updated.RefreshToken)
+				return upsertProfileTokens(ctx, deps, profileName, updated.WToken, updated.RefreshToken, false)
 			},
 		})
 		if syncErr != nil {

@@ -79,7 +79,7 @@ func runProfileOrdersList(
 		},
 	)
 	if err != nil {
-		return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, err)
+		return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, err, authWarnings...)
 	}
 
 	orders := extractOrderHistoryOrders(payload, statusFilter)
@@ -133,7 +133,7 @@ func newProfileOrdersShowCommand(deps Dependencies) *cobra.Command {
 				},
 			)
 			if err != nil {
-				return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, err)
+				return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, err, authWarnings...)
 			}
 
 			data := buildOrderHistoryDetail(payload)

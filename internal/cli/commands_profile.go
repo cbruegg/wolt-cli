@@ -42,7 +42,7 @@ func newProfileShowCommand(deps Dependencies) *cobra.Command {
 				},
 			)
 			if err != nil {
-				return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, err)
+				return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, err, authWarnings...)
 			}
 			data := buildProfileSummary(payload, splitCSV(include))
 
@@ -88,7 +88,7 @@ func newProfilePaymentsCommand(deps Dependencies) *cobra.Command {
 				},
 			)
 			if err != nil {
-				return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, err)
+				return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, err, authWarnings...)
 			}
 			authWarnings = append(authWarnings, result.Warnings...)
 			methods := extractPaymentMethods(result.Payload, maskSensitive)
@@ -139,7 +139,7 @@ func newProfileAddressesCommand(deps Dependencies) *cobra.Command {
 				},
 			)
 			if err != nil {
-				return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, err)
+				return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, err, authWarnings...)
 			}
 			rows := extractDeliveryAddresses(payload, profileAddressID)
 			if activeOnly && profileAddressID != "" {
@@ -213,7 +213,7 @@ func newProfileAddressesLinksCommand(deps Dependencies) *cobra.Command {
 				},
 			)
 			if err != nil {
-				return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, err)
+				return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, err, authWarnings...)
 			}
 			entry := findDeliveryAddressByID(payload, addressID)
 			if entry == nil {
@@ -280,7 +280,7 @@ func newProfileAddressesAddCommand(deps Dependencies) *cobra.Command {
 				},
 			)
 			if err != nil {
-				return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, err)
+				return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, err, authWarnings...)
 			}
 			if setDefault {
 				_ = setProfileWoltAddressID(cmd.Context(), deps, flags.Profile, asString(created["id"]))
@@ -346,7 +346,7 @@ func newProfileAddressesRemoveCommand(deps Dependencies) *cobra.Command {
 				},
 			)
 			if err != nil {
-				return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, err)
+				return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, err, authWarnings...)
 			}
 			profile, _ := deps.Profiles.Find(cmd.Context(), flags.Profile)
 			if strings.EqualFold(strings.TrimSpace(profile.WoltAddressID), addressID) {
@@ -436,7 +436,7 @@ func newProfileAddressesUpdateCommand(deps Dependencies) *cobra.Command {
 				},
 			)
 			if err != nil {
-				return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, err)
+				return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, err, authWarnings...)
 			}
 			newID := strings.TrimSpace(asString(created["id"]))
 			if setDefault || oldID != "" {

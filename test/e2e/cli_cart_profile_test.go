@@ -266,8 +266,11 @@ func TestAuthStatusAutoRefreshesExpiredTokenAndPersistsProfile(t *testing.T) {
 	if savedProfile.WToken != "rotated-token" {
 		t.Fatalf("expected persisted wtoken rotated-token, got %q", savedProfile.WToken)
 	}
-	if savedProfile.WRefreshToken != "refresh-new" {
-		t.Fatalf("expected persisted wrefresh_token refresh-new, got %q", savedProfile.WRefreshToken)
+	// The rotated refresh token must NOT be persisted — see
+	// upsertProfileTokens. We pin the bootstrap value, mirroring how
+	// wolt.com's __wrtoken cookie never gets rewritten after a refresh.
+	if savedProfile.WRefreshToken != "refresh-old" {
+		t.Fatalf("expected bootstrap wrefresh_token to remain refresh-old, got %q", savedProfile.WRefreshToken)
 	}
 
 	payload := mustJSON(t, out)

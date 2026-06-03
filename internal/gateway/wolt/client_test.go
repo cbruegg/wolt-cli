@@ -90,7 +90,7 @@ func TestPaymentMethodsAddsPlatformHeaders(t *testing.T) {
 	}
 }
 
-func TestRefreshAccessTokenUsesFormBodyAndCookies(t *testing.T) {
+func TestRefreshAccessTokenSendsBodyOnlyWithoutCookies(t *testing.T) {
 	httpClient := &captureHTTPClient{
 		responseBody: `{"access_token":"new-token","refresh_token":"new-refresh","expires_in":1800}`,
 	}
@@ -104,6 +104,10 @@ func TestRefreshAccessTokenUsesFormBodyAndCookies(t *testing.T) {
 	result, err := client.RefreshAccessToken(
 		context.Background(),
 		"refresh-token-1",
+		// Cookies are intentionally provided here to assert that they are
+		// dropped on the refresh request — matching what wolt.com's web
+		// app does (the __wtoken/__wrtoken cookies are host-only on
+		// wolt.com and never reach authentication.wolt.com).
 		AuthContext{Cookies: []string{"__wrtoken=refresh-token-1", "foo=bar"}},
 	)
 	if err != nil {
@@ -127,8 +131,11 @@ func TestRefreshAccessTokenUsesFormBodyAndCookies(t *testing.T) {
 	if got := httpClient.request.Header.Get("Content-Type"); got != "application/x-www-form-urlencoded" {
 		t.Fatalf("expected form content-type, got %q", got)
 	}
-	if got := httpClient.request.Header.Get("Cookie"); got != "__wrtoken=refresh-token-1; foo=bar" {
-		t.Fatalf("expected cookie header to be forwarded, got %q", got)
+	if got := httpClient.request.Header.Get("Cookie"); got != "" {
+		t.Fatalf("expected no Cookie header on refresh request, got %q", got)
+	}
+	if got := httpClient.request.Header.Get("Authorization"); got != "" {
+		t.Fatalf("expected no Authorization header on refresh request, got %q", got)
 	}
 	if strings.Contains(strings.ToLower(httpClient.requestBody), "access_token") {
 		t.Fatalf("did not expect access token field in request body, got %q", httpClient.requestBody)

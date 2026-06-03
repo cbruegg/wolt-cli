@@ -84,7 +84,7 @@ func newCheckoutPreviewCommand(deps Dependencies) *cobra.Command {
 				},
 			)
 			if err != nil {
-				return emitUpstreamError(cmd, format, profile, flags.Locale, flags.Output, flags.Verbose, err)
+				return emitUpstreamError(cmd, format, profile, flags.Locale, flags.Output, flags.Verbose, err, authWarnings...)
 			}
 			basket, basketSelection, selectionWarnings := selectBasketWithMeta(page, venueID)
 			if basket == nil {
@@ -129,7 +129,8 @@ func newCheckoutPreviewCommand(deps Dependencies) *cobra.Command {
 				},
 			)
 			if err != nil {
-				return emitUpstreamError(cmd, format, profile, flags.Locale, flags.Output, flags.Verbose, err)
+				combined := append(append([]string{}, authWarnings...), checkoutAuthWarnings...)
+				return emitUpstreamError(cmd, format, profile, flags.Locale, flags.Output, flags.Verbose, err, combined...)
 			}
 
 			payableAmount := asInt(payload["payable_amount"])

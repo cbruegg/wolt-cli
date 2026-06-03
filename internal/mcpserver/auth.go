@@ -119,15 +119,23 @@ func (tc *ToolCtx) refreshTokens(ctx context.Context, auth *woltgateway.AuthCont
 	}
 	auth.WToken = access
 	if r := strings.TrimSpace(result.RefreshToken); r != "" {
+		// In-memory only — see persistTokens for why the on-disk refresh token
+		// stays pinned to the bootstrap value.
 		auth.RefreshToken = r
 	}
 	if tc.config != nil {
-		_ = tc.persistTokens(ctx, auth.WToken, auth.RefreshToken)
+		_ = tc.persistTokens(ctx, auth.WToken)
 	}
 	return nil
 }
 
-func (tc *ToolCtx) persistTokens(ctx context.Context, accessToken, refreshToken string) error {
+// persistTokens writes the rotated access token back to disk but leaves the
+// refresh token pinned to whatever wolt login put there. This matches the
+// browser, which never rewrites __wrtoken after a /access_token call — it
+// keeps replaying the bootstrap cookie value every refresh. Persisting every
+// rotation forks our chain off the browser's, and Wolt invalidates the
+// orphan side as soon as either party next replays the bootstrap.
+func (tc *ToolCtx) persistTokens(ctx context.Context, accessToken string) error {
 	cfg, err := tc.config.Load(ctx)
 	if err != nil {
 		cfg = domain.Config{Profiles: []domain.Profile{{Name: "default", IsDefault: true}}}
@@ -139,9 +147,6 @@ func (tc *ToolCtx) persistTokens(ctx context.Context, accessToken, refreshToken 
 	cfg.Profiles[0].IsDefault = true
 	if accessToken != "" {
 		cfg.Profiles[0].WToken = accessToken
-	}
-	if refreshToken != "" {
-		cfg.Profiles[0].WRefreshToken = refreshToken
 	}
 	return tc.config.Save(ctx, cfg)
 }

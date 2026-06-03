@@ -151,13 +151,33 @@ func emitError(
 	code string,
 	message string,
 ) error {
+	return emitErrorWithWarnings(cmd, format, profile, locale, outputPath, code, message, nil)
+}
+
+func emitErrorWithWarnings(
+	cmd *cobra.Command,
+	format output.Format,
+	profile string,
+	locale string,
+	outputPath string,
+	code string,
+	message string,
+	warnings []string,
+) error {
 	if format == output.FormatTable {
-		if err := output.WriteOutput(cmd.OutOrStdout(), message, outputPath); err != nil {
+		rendered := message
+		for _, warning := range warnings {
+			if strings.TrimSpace(warning) == "" {
+				continue
+			}
+			rendered += "\nWarning: " + warning
+		}
+		if err := output.WriteOutput(cmd.OutOrStdout(), rendered, outputPath); err != nil {
 			return err
 		}
 		return &exitError{code: 1}
 	}
-	env := output.BuildEnvelope(profile, locale, nil, []string{}, map[string]any{
+	env := output.BuildEnvelope(profile, locale, nil, append([]string{}, warnings...), map[string]any{
 		"code":    code,
 		"message": message,
 	})
@@ -273,12 +293,13 @@ func emitUpstreamError(
 	outputPath string,
 	verbose bool,
 	err error,
+	warnings ...string,
 ) error {
 	if err == nil {
 		err = woltgateway.ErrUpstream
 	}
 	if verbose {
-		return emitError(cmd, format, profile, locale, outputPath, "WOLT_UPSTREAM_ERROR", err.Error())
+		return emitErrorWithWarnings(cmd, format, profile, locale, outputPath, "WOLT_UPSTREAM_ERROR", err.Error(), warnings)
 	}
 
 	message := woltgateway.ErrUpstream.Error() + " (use --verbose for details)"
@@ -293,7 +314,7 @@ func emitUpstreamError(
 			message = fmt.Sprintf("%s (status %d, use --verbose for details)", woltgateway.ErrUpstream.Error(), upstreamErr.StatusCode)
 		}
 	}
-	return emitError(cmd, format, profile, locale, outputPath, code, message)
+	return emitErrorWithWarnings(cmd, format, profile, locale, outputPath, code, message, warnings)
 }
 
 func splitCSV(value string) map[string]struct{} {
@@ -446,12 +467,21 @@ func isUnauthorizedUpstream(err error) bool {
 	return upstreamErr.StatusCode == 401
 }
 
+// upsertProfileTokens writes refreshed credentials back to the on-disk profile.
+// writeRefreshToken=false matches the browser: the rotated refresh_token from a
+// /access_token response stays in memory only. The bootstrap refresh token in
+// the config remains pinned (just like wolt.com's __wrtoken cookie). Wolt's
+// server tolerates replaying the bootstrap value within a grace window and
+// keeps minting new access tokens; persisting every rotation forks our chain
+// off whatever the browser is on, which is what caused the "session expired"
+// hourly loop.
 func upsertProfileTokens(
 	ctx context.Context,
 	deps Dependencies,
 	selectedProfile string,
 	accessToken string,
 	refreshToken string,
+	writeRefreshToken bool,
 ) error {
 	if deps.Config == nil {
 		return nil
@@ -468,7 +498,7 @@ func upsertProfileTokens(
 	if strings.TrimSpace(accessToken) != "" {
 		cfg.Profiles[0].WToken = normalizeWToken(accessToken)
 	}
-	if strings.TrimSpace(refreshToken) != "" {
+	if writeRefreshToken && strings.TrimSpace(refreshToken) != "" {
 		cfg.Profiles[0].WRefreshToken = normalizeRefreshToken(refreshToken)
 	}
 	cfg.Profiles[0].Name = "default"
@@ -500,11 +530,13 @@ func refreshAuthContext(
 	}
 	auth.WToken = accessToken
 	if candidate := normalizeRefreshToken(result.RefreshToken); candidate != "" {
+		// In-memory only — keep walking the chain within this process, but the
+		// bootstrap token in the config stays put. See upsertProfileTokens.
 		auth.RefreshToken = candidate
 	}
 	warnings = append(warnings, "access token refreshed automatically")
-	if err := upsertProfileTokens(ctx, deps, selectedProfile, auth.WToken, auth.RefreshToken); err != nil {
-		warnings = append(warnings, "failed to persist rotated tokens in profile config")
+	if err := upsertProfileTokens(ctx, deps, selectedProfile, auth.WToken, auth.RefreshToken, false); err != nil {
+		warnings = append(warnings, "failed to persist refreshed access token in profile config")
 	}
 	return true, warnings, nil
 }
@@ -523,10 +555,21 @@ func invokeWithAuthAutoRefresh[T any](
 	}
 	selectedProfile := strings.TrimSpace(flags.Profile)
 	if tokenExpired(auth.WToken, time.Now().UTC(), 30*time.Second) {
+		// Opportunistic re-sync from a running Chrome. Mirrors browser
+		// behaviour: if the user has wolt.com open, their cookies are
+		// almost certainly fresher than ours, and adopting them keeps the
+		// CLI on the same refresh chain as the browser.
+		if chromeAuth, found, _ := pullAuthFromRunningChrome(ctx, ""); found && chromeAuthIsFresherThan(chromeAuth, auth.WToken) {
+			if err := adoptChromeAuth(ctx, deps, auth, chromeAuth); err == nil {
+				warnings = append(warnings, "adopted fresher Wolt session from running Chrome")
+			}
+		}
+	}
+	if tokenExpired(auth.WToken, time.Now().UTC(), 30*time.Second) {
 		_, refreshWarnings, refreshErr := refreshAuthContext(ctx, deps, selectedProfile, auth)
 		warnings = append(warnings, refreshWarnings...)
 		if refreshErr != nil {
-			warnings = append(warnings, "automatic token refresh failed before request")
+			warnings = append(warnings, fmt.Sprintf("automatic token refresh failed before request: %v", refreshErr))
 		}
 	}
 
@@ -541,6 +584,17 @@ func invokeWithAuthAutoRefresh[T any](
 	refreshed, refreshWarnings, refreshErr := refreshAuthContext(ctx, deps, selectedProfile, auth)
 	warnings = append(warnings, refreshWarnings...)
 	if refreshErr != nil {
+		// Refresh chain is dead — last-ditch attempt to recover from Chrome
+		// before surrendering. If the user has a running browser session,
+		// adopting it gives us a working chain again without a re-login.
+		if chromeAuth, found, _ := pullAuthFromRunningChrome(ctx, ""); found {
+			if adoptErr := adoptChromeAuth(ctx, deps, auth, chromeAuth); adoptErr == nil {
+				warnings = append(warnings, "recovered Wolt session from running Chrome after refresh failure")
+				if retryResult, retryErr := invoke(*auth); retryErr == nil {
+					return retryResult, warnings, nil
+				}
+			}
+		}
 		return result, warnings, fmt.Errorf("%w: automatic token refresh failed: %v", err, refreshErr)
 	}
 	if !refreshed {

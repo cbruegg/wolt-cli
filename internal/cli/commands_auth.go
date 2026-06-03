@@ -51,7 +51,7 @@ func newAuthStatusCommand(deps Dependencies) *cobra.Command {
 				},
 			)
 			if err != nil {
-				return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, err)
+				return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, err, authWarnings...)
 			}
 
 			user := asMap(payload["user"])
