@@ -304,20 +304,32 @@ type chromePage struct {
 }
 
 func readAuthFromChrome(ctx context.Context, browserURL string) (woltgateway.AuthContext, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, browserURL+"/json/list", nil)
+	// Network.getAllCookies returns *all* browser cookies regardless of which
+	// CDP target we attach to — so we don't need a wolt.com tab to be open.
+	// Wolt cookies sitting in Chrome's cookie jar are accessible from any
+	// page-level CDP target, or from the browser-level target as a fallback.
+	pages, err := listChromePages(ctx, browserURL)
 	if err != nil {
 		return woltgateway.AuthContext{}, err
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return woltgateway.AuthContext{}, err
-	}
-	defer func() { _ = resp.Body.Close() }()
 
-	var pages []chromePage
-	if err := json.NewDecoder(resp.Body).Decode(&pages); err != nil {
-		return woltgateway.AuthContext{}, err
+	tryTarget := func(wsURL string) (woltgateway.AuthContext, bool) {
+		client, err := newCDPClient(ctx, wsURL)
+		if err != nil {
+			return woltgateway.AuthContext{}, false
+		}
+		auth, err := client.readWoltAuth(ctx)
+		_ = client.close()
+		if err != nil || !auth.HasCredentials() {
+			return woltgateway.AuthContext{}, false
+		}
+		return auth, true
 	}
+
+	// Prefer a wolt.com page if one is open — that's the strongest signal
+	// the user actually has an active Wolt session in this browser, which
+	// the login wait loop depends on to avoid returning stale cookies from
+	// a previous profile.
 	for _, page := range pages {
 		if page.Type != "page" || page.WebSocketDebuggerURL == "" {
 			continue
@@ -325,17 +337,67 @@ func readAuthFromChrome(ctx context.Context, browserURL string) (woltgateway.Aut
 		if !strings.Contains(page.URL, "wolt.") && !strings.Contains(page.URL, "wolt.com") {
 			continue
 		}
-		client, err := newCDPClient(ctx, page.WebSocketDebuggerURL)
-		if err != nil {
-			continue
-		}
-		auth, err := client.readWoltAuth(ctx)
-		_ = client.close()
-		if err == nil && auth.HasCredentials() {
+		if auth, ok := tryTarget(page.WebSocketDebuggerURL); ok {
 			return auth, nil
 		}
 	}
+
+	// No wolt tab open but the cookies may still be in Chrome's jar.
+	// Try any page target.
+	for _, page := range pages {
+		if page.Type != "page" || page.WebSocketDebuggerURL == "" {
+			continue
+		}
+		if auth, ok := tryTarget(page.WebSocketDebuggerURL); ok {
+			return auth, nil
+		}
+	}
+
+	// Last resort: connect to the browser-level target from /json/version.
+	// Works even when no normal page is open.
+	if wsURL, err := browserDebuggerURL(ctx, browserURL); err == nil && wsURL != "" {
+		if auth, ok := tryTarget(wsURL); ok {
+			return auth, nil
+		}
+	}
+
 	return woltgateway.AuthContext{}, fmt.Errorf("no Wolt auth cookies found in Chrome")
+}
+
+func listChromePages(ctx context.Context, browserURL string) ([]chromePage, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, browserURL+"/json/list", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var pages []chromePage
+	if err := json.NewDecoder(resp.Body).Decode(&pages); err != nil {
+		return nil, err
+	}
+	return pages, nil
+}
+
+func browserDebuggerURL(ctx context.Context, browserURL string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, browserURL+"/json/version", nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var payload struct {
+		WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(payload.WebSocketDebuggerURL), nil
 }
 
 type cdpClient struct {
