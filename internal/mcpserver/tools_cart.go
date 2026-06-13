@@ -151,6 +151,17 @@ func (tc *ToolCtx) handleCartAdd(ctx context.Context, _ *mcp.CallToolRequest, in
 	if ref.ID == "" {
 		return nil, CartAddOutput{}, toolErrf("could not resolve venue id for %q", in.Venue)
 	}
+	// Refuse to POST when the venue did not resolve to a real Wolt venue id (a
+	// 24-char ObjectID). Posting a slug as venue_id makes the Wolt backend
+	// return a success-shaped response and bump the basket count, but the
+	// basket never persists to the listable cart — a silent "phantom basket"
+	// (issue #19). Failing loudly beats reporting a fake success.
+	if !looksLikeObjectID(ref.ID) {
+		return nil, CartAddOutput{}, toolErrf(
+			"could not resolve %q to a Wolt venue id, so the item was NOT added (the basket would not persist); pass the 24-character venue id or a wolt.com venue URL",
+			in.Venue,
+		)
+	}
 
 	// Resolve price/name from the item page if not provided.
 	price := in.Price

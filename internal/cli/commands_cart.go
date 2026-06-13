@@ -386,6 +386,29 @@ func newCartAddCommand(deps Dependencies) *cobra.Command {
 				warnings = append(warnings, "unable to load existing basket snapshot before add; upstream may replace existing lines")
 			}
 
+			// Refuse to POST when the venue still hasn't resolved to a real
+			// Wolt venue id (a 24-char ObjectID). Posting a slug as venue_id
+			// makes the Wolt backend return a success-shaped response and bump
+			// the basket count, but the basket never persists to the listable
+			// cart — a silent "phantom basket" (issue #19). Failing here is far
+			// better than reporting a fake success.
+			if !looksLikeObjectID(venueMutationID) {
+				warnings = dedupeStrings(warnings)
+				return emitErrorWithWarnings(
+					cmd,
+					format,
+					profile,
+					flags.Locale,
+					flags.Output,
+					"WOLT_VENUE_UNRESOLVED",
+					fmt.Sprintf(
+						"Could not resolve venue %q to a Wolt venue id, so the item was NOT added (the basket would not persist). Pass the 24-character venue id or a full wolt.com venue URL.",
+						strings.TrimSpace(venueArg),
+					),
+					warnings,
+				)
+			}
+
 			addPayload := map[string]any{
 				"items":    mergedItems,
 				"venue_id": venueMutationID,

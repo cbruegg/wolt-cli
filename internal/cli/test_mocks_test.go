@@ -12,6 +12,7 @@ type testWoltAPI struct {
 	deliveryInfoListFn   func(context.Context, woltgateway.AuthContext) (map[string]any, error)
 	restaurantByIDFn     func(context.Context, string) (*domain.Restaurant, error)
 	venuePageStaticFn    func(context.Context, string) (map[string]any, error)
+	venuePageDynamicFn   func(context.Context, string, woltgateway.VenuePageDynamicOptions) (map[string]any, error)
 }
 
 func (m *testWoltAPI) FrontPage(context.Context, domain.Location) (map[string]any, error) {
@@ -44,7 +45,10 @@ func (m *testWoltAPI) VenuePageStatic(ctx context.Context, slug string) (map[str
 	return map[string]any{}, nil
 }
 
-func (m *testWoltAPI) VenuePageDynamic(context.Context, string, woltgateway.VenuePageDynamicOptions) (map[string]any, error) {
+func (m *testWoltAPI) VenuePageDynamic(ctx context.Context, slug string, opts woltgateway.VenuePageDynamicOptions) (map[string]any, error) {
+	if m.venuePageDynamicFn != nil {
+		return m.venuePageDynamicFn(ctx, slug, opts)
+	}
 	return map[string]any{}, nil
 }
 

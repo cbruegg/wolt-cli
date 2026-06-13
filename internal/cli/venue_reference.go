@@ -261,11 +261,33 @@ func resolveVenueReference(ctx context.Context, deps Dependencies, raw string) (
 		return ref, nil
 	}
 	if deps.Wolt != nil {
-		if payload, err := cachedVenuePageStatic(ctx, deps, input); err == nil {
-			if id := venueIDFromPayload(payload); id != "" {
-				ref.VenueID = id
-			}
+		if id := resolveVenueIDFromSlug(ctx, deps, input); id != "" {
+			ref.VenueID = id
+			rememberVenueID(input, id)
 		}
 	}
 	return ref, nil
+}
+
+// resolveVenueIDFromSlug turns a venue slug into its Mongo ObjectID. It tries
+// the (cached) static venue page first, then falls back to the dynamic venue
+// page. Wolt now 404s the static `pages/venue/slug/<slug>/static` endpoint for
+// the vast majority of venues, so the dynamic page is the reliable slug→id
+// source. Without it, cart mutations would post the slug as `venue_id` and the
+// Wolt backend silently creates a non-persisting "phantom" basket (issue #19).
+// Returns "" when neither endpoint yields a real id.
+func resolveVenueIDFromSlug(ctx context.Context, deps Dependencies, slug string) string {
+	if deps.Wolt == nil {
+		return ""
+	}
+	if payload, err := cachedVenuePageStatic(ctx, deps, slug); err == nil {
+		if id := strings.TrimSpace(venueIDFromPayload(payload)); id != "" {
+			return id
+		}
+	}
+	payload, err := deps.Wolt.VenuePageDynamic(ctx, slug, woltgateway.VenuePageDynamicOptions{})
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(venueIDFromPayload(payload))
 }

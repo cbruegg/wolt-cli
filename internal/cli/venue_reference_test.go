@@ -2,9 +2,11 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/mekedron/wolt-cli/internal/domain"
+	woltgateway "github.com/mekedron/wolt-cli/internal/gateway/wolt"
 )
 
 func TestNormalizeVenueInput(t *testing.T) {
@@ -60,6 +62,64 @@ func TestResolveVenueReferenceSlugQueriesStaticPage(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("expected exactly one static-page call, got %d", calls)
+	}
+}
+
+func TestResolveVenueReferenceSlugFallsBackToDynamicWhenStaticFails(t *testing.T) {
+	withIsolatedSlugCache(t)
+	staticCalls := 0
+	dynamicCalls := 0
+	wolt := &testWoltAPI{
+		venuePageStaticFn: func(_ context.Context, slug string) (map[string]any, error) {
+			staticCalls++
+			// Wolt now 404s the static page for most venues.
+			return nil, errors.New("status 404")
+		},
+		venuePageDynamicFn: func(_ context.Context, slug string, _ woltgateway.VenuePageDynamicOptions) (map[string]any, error) {
+			dynamicCalls++
+			if slug != "eat-poke-iso-omena" {
+				t.Fatalf("expected slug passed to dynamic page, got %q", slug)
+			}
+			return map[string]any{"venue": map[string]any{"id": "637e383476c00f021e6bf084"}}, nil
+		},
+	}
+	deps := Dependencies{Wolt: wolt}
+
+	ref, err := resolveVenueReference(context.Background(), deps, "eat-poke-iso-omena")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ref.VenueID != "637e383476c00f021e6bf084" {
+		t.Fatalf("expected id resolved via dynamic fallback, got %q", ref.VenueID)
+	}
+	if staticCalls != 1 || dynamicCalls != 1 {
+		t.Fatalf("expected static=1 dynamic=1, got static=%d dynamic=%d", staticCalls, dynamicCalls)
+	}
+	// The resolved id must be cached so a second lookup skips both upstreams.
+	if cached, ok := lookupCachedVenueID("eat-poke-iso-omena"); !ok || cached != "637e383476c00f021e6bf084" {
+		t.Fatalf("expected resolved id to be cached, got %q ok=%v", cached, ok)
+	}
+}
+
+func TestResolveVenueReferenceSlugSkipsDynamicWhenStaticResolves(t *testing.T) {
+	withIsolatedSlugCache(t)
+	wolt := &testWoltAPI{
+		venuePageStaticFn: func(_ context.Context, _ string) (map[string]any, error) {
+			return map[string]any{"venue": map[string]any{"id": "6123456789abcdef01234567"}}, nil
+		},
+		venuePageDynamicFn: func(_ context.Context, slug string, _ woltgateway.VenuePageDynamicOptions) (map[string]any, error) {
+			t.Fatalf("dynamic page must not be called when static resolves, got slug %q", slug)
+			return nil, nil
+		},
+	}
+	deps := Dependencies{Wolt: wolt}
+
+	ref, err := resolveVenueReference(context.Background(), deps, "hesburger-kamppi")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ref.VenueID != "6123456789abcdef01234567" {
+		t.Fatalf("expected id from static payload, got %q", ref.VenueID)
 	}
 }
 

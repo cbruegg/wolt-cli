@@ -406,7 +406,7 @@ func TestCartAddJSON(t *testing.T) {
 				if auth.WToken == "" {
 					t.Fatalf("expected auth token in addToBasket")
 				}
-				return map[string]any{"id": "basket-1", "venue_id": "venue-1"}, nil
+				return map[string]any{"id": "basket-1", "venue_id": "6348098a9157ab2b10bdaf65"}, nil
 			},
 			basketCountFunc: func(context.Context, woltgateway.AuthContext) (map[string]any, error) {
 				return map[string]any{"count": 2}, nil
@@ -417,7 +417,7 @@ func TestCartAddJSON(t *testing.T) {
 						map[string]any{
 							"id":    "basket-1",
 							"total": "€34.00",
-							"venue": map[string]any{"id": "venue-1"},
+							"venue": map[string]any{"id": "6348098a9157ab2b10bdaf65", "slug": "venue-1"},
 							"items": []any{
 								map[string]any{"id": "line-1", "name": "Classics set", "count": 2, "price": 1700, "options": []any{}},
 							},
@@ -741,7 +741,7 @@ func TestCartAddUsesVenueSlugAssortmentFallback(t *testing.T) {
 			},
 			addToBasketFunc: func(_ context.Context, payload map[string]any, _ woltgateway.AuthContext) (map[string]any, error) {
 				seenAddPayload = payload
-				return map[string]any{"id": "basket-1", "venue_id": "venue-1"}, nil
+				return map[string]any{"id": "basket-1", "venue_id": "6348098a9157ab2b10bdaf65"}, nil
 			},
 			basketCountFunc: func(context.Context, woltgateway.AuthContext) (map[string]any, error) {
 				return map[string]any{"count": 1}, nil
@@ -752,7 +752,7 @@ func TestCartAddUsesVenueSlugAssortmentFallback(t *testing.T) {
 						map[string]any{
 							"id":    "basket-1",
 							"total": "€17.00",
-							"venue": map[string]any{"id": "venue-1"},
+							"venue": map[string]any{"id": "6348098a9157ab2b10bdaf65", "slug": "venue-1"},
 							"items": []any{
 								map[string]any{"id": "line-1", "name": "Classics set", "count": 1, "price": 1700, "options": []any{}},
 							},
@@ -824,7 +824,7 @@ func TestCartAddMergesWhenVenueArgIsSlug(t *testing.T) {
 			},
 			addToBasketFunc: func(_ context.Context, payload map[string]any, _ woltgateway.AuthContext) (map[string]any, error) {
 				seenAddPayload = payload
-				return map[string]any{"id": "basket-1", "venue_id": "venue-1"}, nil
+				return map[string]any{"id": "basket-1", "venue_id": "6348098a9157ab2b10bdaf65"}, nil
 			},
 			basketCountFunc: func(context.Context, woltgateway.AuthContext) (map[string]any, error) {
 				return map[string]any{"count": 2}, nil
@@ -835,7 +835,7 @@ func TestCartAddMergesWhenVenueArgIsSlug(t *testing.T) {
 						map[string]any{
 							"id":    "basket-1",
 							"total": "€22.00",
-							"venue": map[string]any{"id": "venue-1", "slug": "venue-one"},
+							"venue": map[string]any{"id": "6348098a9157ab2b10bdaf65", "slug": "venue-one"},
 							"items": []any{
 								map[string]any{"id": "item-old", "name": "Old item", "count": 1, "price": 1700, "options": []any{}},
 							},
@@ -866,8 +866,8 @@ func TestCartAddMergesWhenVenueArgIsSlug(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
 	}
-	if seenAddPayload["venue_id"] != "venue-1" {
-		t.Fatalf("expected venue_id resolved to venue-1, got %v", seenAddPayload["venue_id"])
+	if seenAddPayload["venue_id"] != "6348098a9157ab2b10bdaf65" {
+		t.Fatalf("expected venue_id resolved to 6348098a9157ab2b10bdaf65, got %v", seenAddPayload["venue_id"])
 	}
 	items := asSlicePayload(t, seenAddPayload["items"])
 	if len(items) != 2 {
@@ -878,6 +878,112 @@ func TestCartAddMergesWhenVenueArgIsSlug(t *testing.T) {
 	}
 	if asMapPayload(t, items[1])["id"] != "item-new" {
 		t.Fatalf("expected new item second, got %v", asMapPayload(t, items[1])["id"])
+	}
+}
+
+// TestCartAddResolvesSlugViaDynamicVenuePage locks in the issue #19 fix: when
+// the static venue page 404s (as Wolt now does for most venues), the slug must
+// still resolve to its real ObjectID via the dynamic venue page, and that
+// ObjectID — not the slug — must be posted as venue_id.
+func TestCartAddResolvesSlugViaDynamicVenuePage(t *testing.T) {
+	seenAddPayload := map[string]any{}
+	deps := cli.Dependencies{
+		Wolt: &mockWolt{
+			venuePageStaticFunc: func(context.Context, string) (map[string]any, error) {
+				return nil, errors.New("status 404")
+			},
+			venuePageDynamicFunc: func(_ context.Context, slug string, _ woltgateway.VenuePageDynamicOptions) (map[string]any, error) {
+				if slug != "eat-poke-iso-omena" {
+					t.Fatalf("expected slug forwarded to dynamic page, got %q", slug)
+				}
+				return map[string]any{"venue": map[string]any{"id": "637e383476c00f021e6bf084"}}, nil
+			},
+			venueItemPageFunc: func(context.Context, string, string) (map[string]any, error) {
+				return map[string]any{"name": "Poke Bowl", "price": map[string]any{"amount": 1290, "currency": "EUR"}}, nil
+			},
+			addToBasketFunc: func(_ context.Context, payload map[string]any, _ woltgateway.AuthContext) (map[string]any, error) {
+				seenAddPayload = payload
+				return map[string]any{"id": "basket-1", "venue_id": "637e383476c00f021e6bf084"}, nil
+			},
+			basketCountFunc: func(context.Context, woltgateway.AuthContext) (map[string]any, error) {
+				return map[string]any{"count": 1}, nil
+			},
+			basketsPageFunc: func(context.Context, domain.Location, woltgateway.AuthContext) (map[string]any, error) {
+				return map[string]any{"baskets": []any{}}, nil
+			},
+		},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 60.1, Lon: 24.9}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+
+	exitCode, out := runCLIWithDeps(
+		t,
+		deps,
+		"cart", "add",
+		"eat-poke-iso-omena",
+		"637f5bdbe4e55632767da017",
+		"--wtoken", "token",
+		"--format", "json",
+	)
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
+	}
+	if seenAddPayload["venue_id"] != "637e383476c00f021e6bf084" {
+		t.Fatalf("expected slug resolved to ObjectID via dynamic page, posted venue_id=%v", seenAddPayload["venue_id"])
+	}
+}
+
+// TestCartAddRejectsUnresolvedVenue locks in the issue #19 fix: when a slug
+// cannot be resolved to a real venue id (both static and dynamic pages fail)
+// and the user has no existing basket for it, cart add must fail loudly rather
+// than POST the slug as venue_id and report a fake success against a phantom
+// basket.
+func TestCartAddRejectsUnresolvedVenue(t *testing.T) {
+	addCalled := false
+	deps := cli.Dependencies{
+		Wolt: &mockWolt{
+			venuePageStaticFunc: func(context.Context, string) (map[string]any, error) {
+				return nil, errors.New("status 404")
+			},
+			venuePageDynamicFunc: func(context.Context, string, woltgateway.VenuePageDynamicOptions) (map[string]any, error) {
+				return nil, errors.New("status 404")
+			},
+			venueItemPageFunc: func(context.Context, string, string) (map[string]any, error) {
+				return map[string]any{"name": "Mystery item", "price": map[string]any{"amount": 500, "currency": "EUR"}}, nil
+			},
+			basketsPageFunc: func(context.Context, domain.Location, woltgateway.AuthContext) (map[string]any, error) {
+				return map[string]any{"baskets": []any{}}, nil
+			},
+			addToBasketFunc: func(context.Context, map[string]any, woltgateway.AuthContext) (map[string]any, error) {
+				addCalled = true
+				return map[string]any{"id": "phantom", "venue_id": "unresolved-slug"}, nil
+			},
+		},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 60.1, Lon: 24.9}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+
+	exitCode, out := runCLIWithDeps(
+		t,
+		deps,
+		"cart", "add",
+		"unresolved-slug",
+		"637f5bdbe4e55632767da017",
+		"--wtoken", "token",
+		"--format", "json",
+	)
+	if exitCode == 0 {
+		t.Fatalf("expected non-zero exit for unresolved venue, got 0; output:\n%s", out)
+	}
+	if !strings.Contains(out, "WOLT_VENUE_UNRESOLVED") {
+		t.Fatalf("expected WOLT_VENUE_UNRESOLVED error code, got:\n%s", out)
+	}
+	if addCalled {
+		t.Fatalf("AddToBasket must NOT be called when the venue is unresolved (would create a phantom basket)")
 	}
 }
 

@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+
+	woltgateway "github.com/mekedron/wolt-cli/internal/gateway/wolt"
 )
 
 var objectIDPattern = regexp.MustCompile(`^[a-f0-9]{24}$`)
@@ -67,13 +69,33 @@ func (tc *ToolCtx) resolveVenueRef(ctx context.Context, raw string) (venueRef, e
 	if tc.wolt == nil {
 		return ref, nil
 	}
-	payload, err := tc.wolt.VenuePageStatic(ctx, input)
-	if err == nil {
-		if id := venueIDFromPayload(payload); id != "" {
-			ref.ID = id
-		}
+	if id := tc.resolveVenueIDFromSlug(ctx, input); id != "" {
+		ref.ID = id
 	}
 	return ref, nil
+}
+
+// resolveVenueIDFromSlug turns a venue slug into its Mongo ObjectID. It tries
+// the static venue page first, then falls back to the dynamic venue page. Wolt
+// now 404s the static `pages/venue/slug/<slug>/static` endpoint for the vast
+// majority of venues, so the dynamic page is the reliable slug→id source.
+// Without it, cart mutations would post the slug as `venue_id` and the Wolt
+// backend silently creates a non-persisting "phantom" basket (issue #19).
+// Returns "" when neither endpoint yields a real id.
+func (tc *ToolCtx) resolveVenueIDFromSlug(ctx context.Context, slug string) string {
+	if tc.wolt == nil {
+		return ""
+	}
+	if payload, err := tc.wolt.VenuePageStatic(ctx, slug); err == nil {
+		if id := strings.TrimSpace(venueIDFromPayload(payload)); id != "" {
+			return id
+		}
+	}
+	payload, err := tc.wolt.VenuePageDynamic(ctx, slug, woltgateway.VenuePageDynamicOptions{})
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(venueIDFromPayload(payload))
 }
 
 func venueIDFromPayload(payload map[string]any) string {

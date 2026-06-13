@@ -286,6 +286,77 @@ func TestTokenExpiredHandlesJWT(t *testing.T) {
 	}
 }
 
+func TestResolveVenueRefFallsBackToDynamic(t *testing.T) {
+	staticCalls, dynamicCalls := 0, 0
+	wolt := &stubWolt{
+		venueStaticFn: func(_ context.Context, _ string) (map[string]any, error) {
+			staticCalls++
+			// Wolt now 404s the static page for most venues.
+			return nil, errors.New("status 404")
+		},
+		venueDynamicFn: func(_ context.Context, slug string, _ woltgateway.VenuePageDynamicOptions) (map[string]any, error) {
+			dynamicCalls++
+			if slug != "eat-poke-iso-omena" {
+				t.Fatalf("expected slug passed to dynamic page, got %q", slug)
+			}
+			return map[string]any{"venue": map[string]any{"id": "637e383476c00f021e6bf084"}}, nil
+		},
+	}
+	tc := newToolCtx(Deps{Wolt: wolt, Profiles: &stubProfiles{}, Location: &stubLocation{}, Config: &stubConfig{}})
+
+	ref, err := tc.resolveVenueRef(context.Background(), "eat-poke-iso-omena")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ref.ID != "637e383476c00f021e6bf084" {
+		t.Fatalf("expected id resolved via dynamic fallback, got %q", ref.ID)
+	}
+	if staticCalls != 1 || dynamicCalls != 1 {
+		t.Fatalf("expected static=1 dynamic=1, got static=%d dynamic=%d", staticCalls, dynamicCalls)
+	}
+}
+
+// TestHandleCartAddRejectsUnresolvedVenue locks in the issue #19 fix for the
+// MCP path: when a slug cannot be resolved to a real venue id, wolt_cart_add
+// must error rather than POST the slug as venue_id (which the Wolt backend
+// turns into a non-persisting phantom basket while reporting success).
+func TestHandleCartAddRejectsUnresolvedVenue(t *testing.T) {
+	addCalled := false
+	wolt := &stubWolt{
+		venueStaticFn: func(context.Context, string) (map[string]any, error) {
+			return nil, errors.New("status 404")
+		},
+		venueDynamicFn: func(context.Context, string, woltgateway.VenuePageDynamicOptions) (map[string]any, error) {
+			return nil, errors.New("status 404")
+		},
+		addToBasketFn: func(context.Context, map[string]any, woltgateway.AuthContext) (map[string]any, error) {
+			addCalled = true
+			return map[string]any{"id": "phantom", "venue_id": "unresolved-slug"}, nil
+		},
+	}
+	tc := newToolCtx(Deps{
+		Wolt:     wolt,
+		Profiles: &stubProfiles{profile: domain.Profile{Name: "default", WToken: "token"}},
+		Location: &stubLocation{},
+		Config:   &stubConfig{},
+	})
+
+	_, _, err := tc.handleCartAdd(context.Background(), nil, CartAddInput{
+		Venue:  "unresolved-slug",
+		ItemID: "637f5bdbe4e55632767da017",
+		Price:  500,
+	})
+	if err == nil {
+		t.Fatalf("expected an error for an unresolved venue, got nil")
+	}
+	if !strings.Contains(err.Error(), "venue id") {
+		t.Fatalf("expected a venue-resolution error, got: %v", err)
+	}
+	if addCalled {
+		t.Fatalf("AddToBasket must NOT be called when the venue is unresolved (would create a phantom basket)")
+	}
+}
+
 // ---------------- helpers ----------------
 
 func connectInMemory(t *testing.T, deps Deps) (*mcp.Server, *mcp.ClientSession) {
@@ -324,6 +395,9 @@ type stubWolt struct {
 	userMeFn           func(context.Context, woltgateway.AuthContext) (map[string]any, error)
 	restaurantFn       func(context.Context, string) (*domain.Restaurant, error)
 	assortmentSearchFn func(context.Context, string, string, string, woltgateway.AuthContext) (map[string]any, error)
+	venueStaticFn      func(context.Context, string) (map[string]any, error)
+	venueDynamicFn     func(context.Context, string, woltgateway.VenuePageDynamicOptions) (map[string]any, error)
+	addToBasketFn      func(context.Context, map[string]any, woltgateway.AuthContext) (map[string]any, error)
 }
 
 func (s *stubWolt) FrontPage(context.Context, domain.Location) (map[string]any, error) {
@@ -350,10 +424,16 @@ func (s *stubWolt) RestaurantByID(ctx context.Context, id string) (*domain.Resta
 func (s *stubWolt) Search(context.Context, domain.Location, string) (map[string]any, error) {
 	return map[string]any{}, nil
 }
-func (s *stubWolt) VenuePageStatic(context.Context, string) (map[string]any, error) {
+func (s *stubWolt) VenuePageStatic(ctx context.Context, slug string) (map[string]any, error) {
+	if s.venueStaticFn != nil {
+		return s.venueStaticFn(ctx, slug)
+	}
 	return map[string]any{}, nil
 }
-func (s *stubWolt) VenuePageDynamic(context.Context, string, woltgateway.VenuePageDynamicOptions) (map[string]any, error) {
+func (s *stubWolt) VenuePageDynamic(ctx context.Context, slug string, opts woltgateway.VenuePageDynamicOptions) (map[string]any, error) {
+	if s.venueDynamicFn != nil {
+		return s.venueDynamicFn(ctx, slug, opts)
+	}
 	return map[string]any{}, nil
 }
 func (s *stubWolt) AssortmentByVenueSlug(context.Context, string) (map[string]any, error) {
@@ -425,7 +505,10 @@ func (s *stubWolt) BasketCount(context.Context, woltgateway.AuthContext) (map[st
 func (s *stubWolt) BasketsPage(context.Context, domain.Location, woltgateway.AuthContext) (map[string]any, error) {
 	return map[string]any{}, nil
 }
-func (s *stubWolt) AddToBasket(context.Context, map[string]any, woltgateway.AuthContext) (map[string]any, error) {
+func (s *stubWolt) AddToBasket(ctx context.Context, payload map[string]any, auth woltgateway.AuthContext) (map[string]any, error) {
+	if s.addToBasketFn != nil {
+		return s.addToBasketFn(ctx, payload, auth)
+	}
 	return map[string]any{}, nil
 }
 func (s *stubWolt) DeleteBaskets(context.Context, []string, woltgateway.AuthContext) (map[string]any, error) {

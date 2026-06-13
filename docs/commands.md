@@ -269,6 +269,13 @@ The basket lives in your Wolt account (same draft you see in the Wolt
 sidebar). Mutations call `POST /order-xp/v1/baskets` and the bulk-delete
 endpoint; no payment or delivery is dispatched from this CLI.
 
+`cart add` first resolves whatever venue you pass (slug, id, or URL) to
+its real 24-character venue id before posting — the basket POST only
+persists when keyed by that id, not a slug. If the venue can't be
+resolved (an unknown slug, or one Wolt no longer serves) `cart add`
+fails with `WOLT_VENUE_UNRESOLVED` instead of reporting a success that
+never reaches your cart.
+
 `--option` accepts both IDs and case-insensitive names:
 
 ```console
