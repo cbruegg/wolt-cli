@@ -1,8 +1,12 @@
-name: Live smoke (weekly)
+name: Live smoke (daily)
 
-# Weekly smoke against real Wolt consumer-api endpoints. Detects
-# upstream contract drift before users do. Read-only only — no
-# login, no cart mutations, no checkout placement, no stats sync.
+# Daily smoke against real Wolt consumer-api endpoints. Detects
+# upstream contract drift before users do. The read-only surface
+# (status/account/feed/venue/cart-show) always runs; a cart round-trip
+# (add a McDonald's Kamppi cheeseburger → checkout preview → remove)
+# runs because WOLT_SMOKE_CART=1 is set below. Checkout is preview-only —
+# no real order is ever placed, and the basket is torn down on exit.
+# No login, no stats sync.
 #
 # Required repository secret:
 #   WOLT_SMOKE_CONFIG_JSON  contents of ~/.wolt/.wolt-config.json
@@ -27,7 +31,7 @@ name: Live smoke (weekly)
 
 on:
   schedule:
-    - cron: "0 7 * * 1" # Mondays 07:00 UTC ≈ Helsinki morning
+    - cron: "0 7 * * *" # Daily 07:00 UTC ≈ Helsinki morning
   workflow_dispatch:
 
 # Note: deliberately no pull_request / push trigger. The secrets must
@@ -49,6 +53,10 @@ jobs:
 
     env:
       WOLT_SMOKE_CONFIG_JSON: ${{ secrets.WOLT_SMOKE_CONFIG_JSON }}
+      # Enables the mutating cart round-trip (add → checkout preview →
+      # remove) in live-smoke.sh. Unset locally so manual runs stay
+      # read-only and never touch a real cart.
+      WOLT_SMOKE_CART: "1"
 
     steps:
       - name: Checkout
@@ -171,7 +179,7 @@ jobs:
           today="$(date -u +%Y-%m-%d)"
           body=$(
             cat <<EOF
-          Weekly live-Wolt smoke failed on **${today}**.
+          Daily live-Wolt smoke failed on **${today}**.
 
           - Run: ${run_url}
           - Likely causes (in rough order of frequency):

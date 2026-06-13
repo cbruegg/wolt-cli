@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# live-smoke.sh — exercise read-only wolt-cli commands against the live
-# upstream. Detects Wolt-side contract drift before users do.
+# live-smoke.sh — exercise wolt-cli commands against the live upstream.
+# Detects Wolt-side contract drift before users do.
 #
-# Invoked weekly by .github/workflows/live-smoke.yml. Also runnable
+# Invoked daily by .github/workflows/live-smoke.yml. Also runnable
 # locally: just run it, it'll use whatever ~/.wolt/.wolt-config.json
 # you're already logged into.
 #
@@ -16,8 +16,12 @@
 # __wtoken/__wrtoken returns 401 "session expired".
 # Skip the env-var path when running locally to keep your real session intact.
 #
-# READ-ONLY ENDPOINTS ONLY. Never add login/logout, cart-add/remove/
-# clear, or checkout placement — this script runs on a real account.
+# The read-only surface (status/account/feed/venue/cart-show) always runs
+# and never mutates. The cart round-trip (add → checkout preview → remove)
+# is opt-in via WOLT_SMOKE_CART=1 — CI sets it; local runs leave it unset
+# so the script never touches your real cart. Even when enabled it only
+# previews checkout (no order is ever placed) and a trap tears the basket
+# down on exit. Never add login/logout or real order placement here.
 
 set -euo pipefail
 
@@ -28,6 +32,16 @@ readonly HEL_LAT="60.1699"
 readonly HEL_LON="24.9384"
 readonly KNOWN_VENUE="${WOLT_SMOKE_VENUE:-burger-king-finnoo}"
 readonly SMOKE_DIR="${SMOKE_DIR:-${TMPDIR:-/tmp}/wolt-smoke}"
+
+# Cart round-trip (add → checkout preview → remove). Opt-in: only runs
+# when WOLT_SMOKE_CART=1 (CI sets it) so local runs stay read-only and
+# never touch your real cart. McDonald's Kamppi is a stable, always-open
+# central-Helsinki venue; the item is resolved from its live menu at run
+# time (cheapest in-stock name match) so we never pin a volatile item id.
+readonly RUN_CART_SMOKE="${WOLT_SMOKE_CART:-0}"
+readonly MCD_VENUE="${WOLT_SMOKE_CART_VENUE:-mcdonalds-kamppi-1}"
+MCD_ITEM_QUERY="$(printf '%s' "${WOLT_SMOKE_CART_ITEM_QUERY:-with cheese}" | tr '[:upper:]' '[:lower:]')"
+readonly MCD_ITEM_QUERY
 
 mkdir -p "${SMOKE_DIR}"
 
@@ -140,6 +154,68 @@ run "venue static"  "${WOLT_BIN}" venue "${KNOWN_VENUE}"
 run "venue menu"    "${WOLT_BIN}" venue menu "${KNOWN_VENUE}"
 run "cart"          "${WOLT_BIN}" cart
 run "cart count"    "${WOLT_BIN}" cart count
+
+# ---- cart round-trip (opt-in; mutating) ---------------------------
+# Add a cheeseburger from McDonald's Kamppi, preview checkout, then
+# remove it — exercising the cart-mutation path the read-only surface
+# can't (and which issue #19 silently broke). A trap clears the venue's
+# basket on exit so a mid-run failure never strands a basket on the
+# account. Checkout is preview-only; no order is ever placed.
+if [ "${RUN_CART_SMOKE}" = "1" ]; then
+  echo ""
+  echo "-- cart round-trip (mutating) --"
+
+  # Cleanup target; refined to the real venue id once the add resolves it.
+  cart_venue_id="${MCD_VENUE}"
+  cleanup_cart() {
+    if [ -n "${cart_venue_id}" ]; then
+      "${WOLT_BIN}" cart clear --venue-id "${cart_venue_id}" --format json >/dev/null 2>&1 || true
+    fi
+  }
+  trap cleanup_cart EXIT
+
+  run "mcd menu" "${WOLT_BIN}" venue menu "${MCD_VENUE}"
+
+  # Resolve the cheapest in-stock item whose name matches the query, so we
+  # add a real, orderable cheeseburger without hard-coding an item id.
+  cart_pick="$(jq -r --arg q "${MCD_ITEM_QUERY}" '
+    [ .data.items[]
+      | { id: .item_id,
+          name: (.name // ""),
+          price: (.base_price.amount // .base_price // 0),
+          sold_out: (.is_sold_out // false) }
+      | select(.sold_out | not)
+      | select(.price > 0)
+      | select((.name | ascii_downcase) | contains($q)) ]
+    | sort_by(.price) | (.[0] // empty)
+    | "\(.id)\t\(.price)\t\(.name)"
+  ' "${SMOKE_DIR}/mcd_menu.json" 2>/dev/null || true)"
+
+  if [ -n "${cart_pick}" ]; then
+    cart_item_id="$(printf '%s' "${cart_pick}" | cut -f1)"
+    cart_item_price="$(printf '%s' "${cart_pick}" | cut -f2)"
+    cart_item_name="$(printf '%s' "${cart_pick}" | cut -f3-)"
+    printf "[%s] %-22s ... %s (%s c)\n" "$(date -u +%H:%M:%S)" "cart item resolved" "${cart_item_name}" "${cart_item_price}"
+
+    run "cart add" "${WOLT_BIN}" cart add "${MCD_VENUE}" "${cart_item_id}" \
+      --price "${cart_item_price}" --name "${cart_item_name}" --count 1
+
+    # The add response carries the resolved 24-char venue id (issue #19
+    # fix). Scope the preview + teardown to it rather than the slug.
+    add_venue_id="$(jq -r '.data.venue_id // ""' "${SMOKE_DIR}/cart_add.json" 2>/dev/null || true)"
+    if [ -n "${add_venue_id}" ]; then
+      cart_venue_id="${add_venue_id}"
+    fi
+
+    run "checkout preview" "${WOLT_BIN}" checkout --venue-id "${cart_venue_id}"
+    run "cart remove" "${WOLT_BIN}" cart remove "${cart_item_id}" --all --venue-id "${cart_venue_id}"
+  else
+    printf "[%s] %-22s ... FAIL (no in-stock item matching %q in %s)\n" \
+      "$(date -u +%H:%M:%S)" "cart item resolve" "${MCD_ITEM_QUERY}" "${MCD_VENUE}"
+    fail=$((fail + 1))
+    failures+=("cart item resolve")
+  fi
+fi
 
 # ---- summary -------------------------------------------------------
 
