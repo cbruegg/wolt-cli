@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -41,24 +42,46 @@ func newAuthStatusCommand(deps Dependencies) *cobra.Command {
 				return writeMachinePayload(cmd, env, format, flags.Output)
 			}
 
-			payload, authWarnings, err := invokeWithAuthAutoRefresh(
+			result, authWarnings, err := invokeWithAuthAutoRefresh(
 				cmd.Context(),
 				deps,
 				flags,
 				&auth,
-				func(authCtx woltgateway.AuthContext) (map[string]any, error) {
-					return deps.Wolt.UserMe(cmd.Context(), authCtx)
+				func(authCtx woltgateway.AuthContext) (authStatusResult, error) {
+					user, userErr := deps.Wolt.UserMe(cmd.Context(), authCtx)
+					if userErr != nil {
+						return authStatusResult{}, userErr
+					}
+					res := authStatusResult{user: user}
+					// Wolt+ membership lives on a dedicated subscriptions endpoint,
+					// not on /v1/user/me. Treat its failure as non-fatal: the auth
+					// summary is still useful, and an expired token is already
+					// refreshed via the UserMe call above before this runs on retry.
+					subscriptions, subsErr := deps.Wolt.Subscriptions(cmd.Context(), authCtx)
+					if subsErr != nil {
+						res.subscriptionsErr = subsErr
+						return res, nil
+					}
+					res.subscriptions = subscriptions
+					return res, nil
 				},
 			)
 			if err != nil {
 				return emitUpstreamError(cmd, format, profileName, flags.Locale, flags.Output, flags.Verbose, err, authWarnings...)
 			}
 
-			user := asMap(payload["user"])
+			user := asMap(result.user["user"])
 			userID := domain.NormalizeID(coalesceAny(user["_id"], user["id"]))
-			country := asString(coalesceAny(user["country"], payload["country"]))
+			country := asString(coalesceAny(user["country"], result.user["country"]))
 			expiresAt := tokenExpiryRFC3339(auth.WToken)
-			woltPlusSubscriber, _ := extractWoltPlusSubscriber(payload)
+			woltPlusSubscriber, woltPlusKnown := woltPlusActive(result.subscriptions, time.Now().UTC())
+			if !woltPlusKnown {
+				if result.subscriptionsErr != nil {
+					authWarnings = append(authWarnings, fmt.Sprintf("wolt plus status unavailable: %v", result.subscriptionsErr))
+				} else {
+					authWarnings = append(authWarnings, "wolt plus status unavailable")
+				}
+			}
 			data := map[string]any{
 				"authenticated":        true,
 				"user_id":              userID,
@@ -140,99 +163,54 @@ func coalesceAny(values ...any) any {
 	return nil
 }
 
-func extractWoltPlusSubscriber(payload map[string]any) (bool, bool) {
-	user := asMap(payload["user"])
-	primaryCandidates := []map[string]any{user, payload}
-
-	primaryKeys := []string{
-		"is_wolt_plus_subscriber",
-		"wolt_plus_subscriber",
-		"is_wolt_plus_member",
-		"wolt_plus_member",
-		"wolt_plus_active",
-		"wolt_plus",
-		"has_wolt_plus",
-		"is_wolt_plus",
-		"is_plus_subscriber",
-		"plus_subscriber",
-	}
-	for _, candidate := range primaryCandidates {
-		if candidate == nil {
-			continue
-		}
-		for _, key := range primaryKeys {
-			parsed, ok := parseWoltPlusState(candidate[key])
-			if ok {
-				return parsed, true
-			}
-		}
-	}
-
-	nestedKeys := []string{
-		"wolt_plus",
-		"wolt_plus_subscription",
-		"wolt_plus_membership",
-		"plus_subscription",
-		"subscription",
-		"membership",
-	}
-	nestedCandidates := make([]map[string]any, 0, len(primaryCandidates)*len(nestedKeys))
-	for _, candidate := range primaryCandidates {
-		if candidate == nil {
-			continue
-		}
-		for _, key := range nestedKeys {
-			if nested := asMap(candidate[key]); nested != nil {
-				nestedCandidates = append(nestedCandidates, nested)
-			}
-		}
-	}
-
-	nestedValueKeys := []string{
-		"is_subscriber",
-		"subscriber",
-		"is_member",
-		"member",
-		"is_active",
-		"active",
-		"enabled",
-		"is_enabled",
-		"has_subscription",
-		"status",
-		"state",
-		"membership_status",
-		"subscription_status",
-	}
-	for _, candidate := range nestedCandidates {
-		for _, key := range nestedValueKeys {
-			parsed, ok := parseWoltPlusState(candidate[key])
-			if ok {
-				return parsed, true
-			}
-		}
-	}
-
-	return false, false
+// authStatusResult bundles the upstream payloads the status command depends on so
+// they can be fetched under a single auth-refresh attempt.
+type authStatusResult struct {
+	user             map[string]any
+	subscriptions    map[string]any
+	subscriptionsErr error
 }
 
-func parseWoltPlusState(value any) (bool, bool) {
-	switch typed := value.(type) {
-	case bool:
-		return typed, true
-	case int:
-		return typed != 0, true
-	case int64:
-		return typed != 0, true
-	case float64:
-		return typed != 0, true
-	case string:
-		normalized := strings.ToLower(strings.TrimSpace(typed))
-		switch normalized {
-		case "true", "yes", "1", "active", "enabled", "subscribed", "member", "trial", "in_trial", "premium":
+// woltPlusActive reports whether the subscriptions payload from
+// consumer-api.wolt.com/subscriptions-api/v1/subscriptions contains a currently
+// active Wolt+ subscription. The second return value is false when the payload
+// carries no subscriptions list at all, meaning membership could not be
+// determined (e.g. the lookup failed) rather than being definitively absent.
+func woltPlusActive(payload map[string]any, now time.Time) (active bool, known bool) {
+	raw, ok := payload["subscriptions"]
+	if !ok {
+		return false, false
+	}
+	subscriptions := asSlice(raw)
+	if subscriptions == nil {
+		return false, false
+	}
+	for _, value := range subscriptions {
+		if subscriptionActive(asMap(value), now) {
 			return true, true
-		case "false", "no", "0", "inactive", "disabled", "unsubscribed", "not_subscribed", "none", "cancelled", "canceled", "expired":
-			return false, true
 		}
 	}
-	return false, false
+	return false, true
+}
+
+// subscriptionActive decides whether a single subscription entry currently grants
+// Wolt+ access. paid_until_date is the moment the paid period lapses; while it is
+// in the future the member still has access, which also covers cancelled-but-not-
+// yet-expired subscriptions. end_date is null/absent for open-ended auto-renewing
+// plans, so it is only consulted when paid_until_date is missing.
+func subscriptionActive(sub map[string]any, now time.Time) bool {
+	if sub == nil {
+		return false
+	}
+	nowUnix := float64(now.Unix())
+	if paidUntil, ok := asFloat(sub["paid_until_date"]); ok {
+		return paidUntil > nowUnix
+	}
+	if endDate, ok := asFloat(sub["end_date"]); ok {
+		return endDate > nowUnix
+	}
+	if start, ok := asFloat(sub["start_date"]); ok {
+		return start <= nowUnix
+	}
+	return true
 }

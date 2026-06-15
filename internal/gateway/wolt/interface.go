@@ -39,6 +39,7 @@ type API interface {
 	VenueItemPage(ctx context.Context, venueID, itemID string) (map[string]any, error)
 	ItemBySlug(ctx context.Context, location domain.Location, slug string) (*domain.Item, error)
 	UserMe(ctx context.Context, auth AuthContext) (map[string]any, error)
+	Subscriptions(ctx context.Context, auth AuthContext) (map[string]any, error)
 	PaymentMethods(ctx context.Context, auth AuthContext) (map[string]any, error)
 	PaymentMethodsProfile(ctx context.Context, auth AuthContext, options PaymentMethodsProfileOptions) (map[string]any, error)
 	AddressFields(ctx context.Context, location domain.Location, language string, auth AuthContext) (map[string]any, error)

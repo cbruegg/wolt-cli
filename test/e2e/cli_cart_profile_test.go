@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mekedron/wolt-cli/internal/cli"
 	"github.com/mekedron/wolt-cli/internal/domain"
@@ -13,57 +14,28 @@ import (
 
 func TestAuthStatusJSONWithToken(t *testing.T) {
 	seenToken := ""
+	seenSubscriptionsToken := ""
 	deps := cli.Dependencies{
 		Wolt: &mockWolt{
 			userMeFunc: func(_ context.Context, auth woltgateway.AuthContext) (map[string]any, error) {
 				seenToken = auth.WToken
-				return map[string]any{
-					"user": map[string]any{
-						"_id":                     map[string]any{"$oid": "user-1"},
-						"country":                 "FIN",
-						"is_wolt_plus_subscriber": true,
-					},
-				}, nil
-			},
-		},
-		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 60.1, Lon: 24.9}}},
-		Location: &mockLocation{},
-		Config:   &mockConfig{},
-		Version:  "1.1.1",
-	}
-
-	exitCode, out := runCLIWithDeps(t, deps, "status", "--wtoken", "abc.def.ghi", "--format", "json")
-	if exitCode != 0 {
-		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
-	}
-	if seenToken != "abc.def.ghi" {
-		t.Fatalf("expected token abc.def.ghi, got %q", seenToken)
-	}
-	payload := mustJSON(t, out)
-	data := asMapPayload(t, payload["data"])
-	if !asBoolPayload(data["authenticated"]) {
-		t.Fatalf("expected authenticated=true, got %v", data["authenticated"])
-	}
-	if data["user_id"] != "user-1" {
-		t.Fatalf("expected user_id user-1, got %v", data["user_id"])
-	}
-	if !asBoolPayload(data["wolt_plus_subscriber"]) {
-		t.Fatalf("expected wolt_plus_subscriber=true, got %v", data["wolt_plus_subscriber"])
-	}
-}
-
-func TestProfileStatusJSONWithToken(t *testing.T) {
-	seenToken := ""
-	deps := cli.Dependencies{
-		Wolt: &mockWolt{
-			userMeFunc: func(_ context.Context, auth woltgateway.AuthContext) (map[string]any, error) {
-				seenToken = auth.WToken
+				// /v1/user/me carries no Wolt+ field; membership is resolved
+				// from the subscriptions endpoint below.
 				return map[string]any{
 					"user": map[string]any{
 						"_id":     map[string]any{"$oid": "user-1"},
 						"country": "FIN",
-						"wolt_plus": map[string]any{
-							"status": "active",
+					},
+				}, nil
+			},
+			subscriptionsFunc: func(_ context.Context, auth woltgateway.AuthContext) (map[string]any, error) {
+				seenSubscriptionsToken = auth.WToken
+				return map[string]any{
+					"subscriptions": []any{
+						map[string]any{
+							"plan":            map[string]any{"country": "FIN", "name": "Wolt+"},
+							"end_date":        nil,
+							"paid_until_date": float64(time.Now().Add(90 * 24 * time.Hour).Unix()),
 						},
 					},
 				}, nil
@@ -82,6 +54,9 @@ func TestProfileStatusJSONWithToken(t *testing.T) {
 	if seenToken != "abc.def.ghi" {
 		t.Fatalf("expected token abc.def.ghi, got %q", seenToken)
 	}
+	if seenSubscriptionsToken != "abc.def.ghi" {
+		t.Fatalf("expected subscriptions lookup to use token abc.def.ghi, got %q", seenSubscriptionsToken)
+	}
 	payload := mustJSON(t, out)
 	data := asMapPayload(t, payload["data"])
 	if !asBoolPayload(data["authenticated"]) {
@@ -92,6 +67,47 @@ func TestProfileStatusJSONWithToken(t *testing.T) {
 	}
 	if !asBoolPayload(data["wolt_plus_subscriber"]) {
 		t.Fatalf("expected wolt_plus_subscriber=true, got %v", data["wolt_plus_subscriber"])
+	}
+}
+
+func TestAuthStatusJSONReportsInactiveWoltPlus(t *testing.T) {
+	deps := cli.Dependencies{
+		Wolt: &mockWolt{
+			userMeFunc: func(_ context.Context, _ woltgateway.AuthContext) (map[string]any, error) {
+				return map[string]any{
+					"user": map[string]any{
+						"_id":     map[string]any{"$oid": "user-1"},
+						"country": "FIN",
+					},
+				}, nil
+			},
+			subscriptionsFunc: func(_ context.Context, _ woltgateway.AuthContext) (map[string]any, error) {
+				// Only an expired subscription -> not a current Wolt+ member.
+				return map[string]any{
+					"subscriptions": []any{
+						map[string]any{
+							"plan":            map[string]any{"country": "POL", "name": "Wolt+"},
+							"end_date":        float64(time.Now().Add(-30 * 24 * time.Hour).Unix()),
+							"paid_until_date": float64(time.Now().Add(-30 * 24 * time.Hour).Unix()),
+						},
+					},
+				}, nil
+			},
+		},
+		Profiles: &mockProfiles{profile: domain.Profile{Name: "default", IsDefault: true, Location: domain.Location{Lat: 60.1, Lon: 24.9}}},
+		Location: &mockLocation{},
+		Config:   &mockConfig{},
+		Version:  "1.1.1",
+	}
+
+	exitCode, out := runCLIWithDeps(t, deps, "status", "--wtoken", "abc.def.ghi", "--format", "json")
+	if exitCode != 0 {
+		t.Fatalf("expected exit 0, got %d\noutput:\n%s", exitCode, out)
+	}
+	payload := mustJSON(t, out)
+	data := asMapPayload(t, payload["data"])
+	if asBoolPayload(data["wolt_plus_subscriber"]) {
+		t.Fatalf("expected wolt_plus_subscriber=false for an expired subscription, got %v", data["wolt_plus_subscriber"])
 	}
 }
 

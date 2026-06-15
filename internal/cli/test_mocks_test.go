@@ -84,6 +84,10 @@ func (m *testWoltAPI) UserMe(context.Context, woltgateway.AuthContext) (map[stri
 	return map[string]any{}, nil
 }
 
+func (m *testWoltAPI) Subscriptions(context.Context, woltgateway.AuthContext) (map[string]any, error) {
+	return map[string]any{}, nil
+}
+
 func (m *testWoltAPI) PaymentMethods(context.Context, woltgateway.AuthContext) (map[string]any, error) {
 	return map[string]any{}, nil
 }

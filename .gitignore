@@ -8,6 +8,9 @@ coverage.out
 # Local tooling
 .DS_Store
 
+# Local scratch for captured API responses / browser validation (may hold tokens)
+.validation/
+
 # Python legacy caches kept ignored for local environments
 __pycache__/
 .venv*

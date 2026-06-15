@@ -466,6 +466,9 @@ func (s *stubWolt) UserMe(ctx context.Context, auth woltgateway.AuthContext) (ma
 	}
 	return map[string]any{}, nil
 }
+func (s *stubWolt) Subscriptions(context.Context, woltgateway.AuthContext) (map[string]any, error) {
+	return map[string]any{}, nil
+}
 func (s *stubWolt) PaymentMethods(context.Context, woltgateway.AuthContext) (map[string]any, error) {
 	return map[string]any{}, nil
 }

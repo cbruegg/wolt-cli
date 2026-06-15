@@ -30,6 +30,7 @@ type mockWolt struct {
 	venueItemPageFunc       func(context.Context, string, string) (map[string]any, error)
 	itemBySlugFunc          func(context.Context, domain.Location, string) (*domain.Item, error)
 	userMeFunc              func(context.Context, woltgateway.AuthContext) (map[string]any, error)
+	subscriptionsFunc       func(context.Context, woltgateway.AuthContext) (map[string]any, error)
 	paymentMethodsFunc      func(context.Context, woltgateway.AuthContext) (map[string]any, error)
 	paymentProfileFunc      func(context.Context, woltgateway.AuthContext, woltgateway.PaymentMethodsProfileOptions) (map[string]any, error)
 	addressFieldsFunc       func(context.Context, domain.Location, string, woltgateway.AuthContext) (map[string]any, error)
@@ -174,6 +175,13 @@ func (m *mockWolt) UserMe(ctx context.Context, auth woltgateway.AuthContext) (ma
 		return nil, errors.New("user me not mocked")
 	}
 	return m.userMeFunc(ctx, auth)
+}
+
+func (m *mockWolt) Subscriptions(ctx context.Context, auth woltgateway.AuthContext) (map[string]any, error) {
+	if m.subscriptionsFunc == nil {
+		return nil, errors.New("subscriptions not mocked")
+	}
+	return m.subscriptionsFunc(ctx, auth)
 }
 
 func (m *mockWolt) PaymentMethods(ctx context.Context, auth woltgateway.AuthContext) (map[string]any, error) {

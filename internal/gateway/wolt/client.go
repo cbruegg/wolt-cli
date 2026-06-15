@@ -33,6 +33,7 @@ const (
 	defaultAddressFieldsAPIURL  = "https://restaurant-api.wolt.com/v1/consumer-api/address-fields"
 	defaultDeliveryInfoAPIURL   = "https://restaurant-api.wolt.com/v2/delivery/info"
 	defaultOrderHistoryAPIURL   = "https://consumer-api.wolt.com/order-tracking-api/v1/order_history/"
+	defaultSubscriptionsAPIURL  = "https://consumer-api.wolt.com/subscriptions-api/v1/subscriptions"
 	defaultFavoritesPageAPIURL  = "https://consumer-api.wolt.com/v1/pages/venue-list/profile/favourites"
 	defaultFavoriteVenueAPIURL  = "https://restaurant-api.wolt.com/v3/venues/favourites"
 	defaultBasketCountAPIURL    = "https://consumer-api.wolt.com/order-xp/v1/baskets/count"
@@ -98,6 +99,7 @@ type Endpoints struct {
 	AddressFields    string
 	DeliveryInfo     string
 	OrderHistory     string
+	Subscriptions    string
 	FavoritesPage    string
 	FavoriteVenue    string
 	BasketCount      string
@@ -181,6 +183,7 @@ func NewClient(opts ...Option) *Client {
 			AddressFields:    defaultAddressFieldsAPIURL,
 			DeliveryInfo:     defaultDeliveryInfoAPIURL,
 			OrderHistory:     defaultOrderHistoryAPIURL,
+			Subscriptions:    defaultSubscriptionsAPIURL,
 			FavoritesPage:    defaultFavoritesPageAPIURL,
 			FavoriteVenue:    defaultFavoriteVenueAPIURL,
 			BasketCount:      defaultBasketCountAPIURL,
@@ -754,6 +757,13 @@ func (c *Client) ItemBySlug(ctx context.Context, location domain.Location, slug 
 // UserMe returns authenticated user details.
 func (c *Client) UserMe(ctx context.Context, auth AuthContext) (map[string]any, error) {
 	return c.doJSONRequest(ctx, http.MethodGet, c.endpoints.UserMe, nil, nil, c.headers(nil, &auth))
+}
+
+// Subscriptions returns the authenticated user's Wolt+ subscriptions. The
+// /v1/user/me payload carries no subscription data, so membership status must be
+// read from this dedicated subscriptions endpoint.
+func (c *Client) Subscriptions(ctx context.Context, auth AuthContext) (map[string]any, error) {
+	return c.doJSONRequest(ctx, http.MethodGet, c.endpoints.Subscriptions, nil, nil, c.headers(nil, &auth))
 }
 
 // PaymentMethods returns payment methods available for the authenticated user.
