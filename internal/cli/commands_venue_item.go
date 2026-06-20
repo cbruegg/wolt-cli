@@ -749,7 +749,31 @@ func buildVenueDetailFallback(
 		itemCurrency(item),
 		staticPayload["currency"],
 	)))
-	rating := itemRating(item)
+	// The static venue payload is now the only live source for these fields:
+	// the rich /v3/venues/<id> restaurant endpoint returns 410 ("update your
+	// app"). score_raw is numeric, matching the rich path's
+	// restaurant.Rating.Score so table and JSON output stay identical.
+	ratingPayload := asMap(venuePayload["rating"])
+	rating := coalesceAny(ratingPayload["score_raw"], ratingPayload["score"], itemRating(item))
+
+	deliveryMethods := asSlice(venuePayload["delivery_methods"])
+	if deliveryMethods == nil {
+		deliveryMethods = []any{}
+	}
+
+	orderMinimum := map[string]any{
+		"amount":           nil,
+		"formatted_amount": nil,
+	}
+	orderMinimumResolved := false
+	if raw, ok := asFloat(coalesceAny(staticPayload["order_minimum"], venuePayload["order_minimum"])); ok {
+		amount := int(raw)
+		orderMinimum["amount"] = amount
+		if formatted := formatMinorAmount(amount, currency); formatted != "" {
+			orderMinimum["formatted_amount"] = formatted
+		}
+		orderMinimumResolved = true
+	}
 
 	data := map[string]any{
 		"venue_id":         venueID,
@@ -758,11 +782,8 @@ func buildVenueDetailFallback(
 		"address":          address,
 		"currency":         currency,
 		"rating":           rating,
-		"delivery_methods": []any{},
-		"order_minimum": map[string]any{
-			"amount":           nil,
-			"formatted_amount": nil,
-		},
+		"delivery_methods": deliveryMethods,
+		"order_minimum":    orderMinimum,
 	}
 
 	if _, ok := include["hours"]; ok {
@@ -803,8 +824,10 @@ func buildVenueDetailFallback(
 	}
 
 	warnings := []string{
-		"restaurant detail endpoint unavailable; showing basic venue details from static payload",
-		"order minimum is unavailable in basic mode and returned as null",
+		"restaurant detail endpoint unavailable; showing venue details from static payload",
+	}
+	if !orderMinimumResolved {
+		warnings = append(warnings, "order minimum is unavailable in basic mode and returned as null")
 	}
 	return data, warnings
 }

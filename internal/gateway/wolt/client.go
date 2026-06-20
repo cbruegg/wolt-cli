@@ -21,11 +21,11 @@ import (
 const (
 	defaultConsumerAPIURL       = "https://consumer-api.wolt.com/v1/pages/front"
 	defaultSearchAPIURL         = "https://restaurant-api.wolt.com/v1/pages/search"
-	defaultVenuePageAPIURL      = "https://restaurant-api.wolt.com/order-xp/web/v1/pages/venue/slug/"
+	defaultVenuePageAPIURL      = "https://consumer-api.wolt.com/order-xp/web/v1/pages/venue/slug/"
 	defaultVenuePageDynamicURL  = "https://consumer-api.wolt.com/order-xp/web/v1/venue/slug/"
 	defaultAssortmentAPIURL     = "https://consumer-api.wolt.com/consumer-api/consumer-assortment/v1/venues/slug/"
 	defaultVenueContentAPIURL   = "https://consumer-api.wolt.com/consumer-api/venue-content-api/v3/web/venue-content/slug/"
-	defaultVenueItemAPIURL      = "https://restaurant-api.wolt.com/order-xp/web/v1/pages/venue/"
+	defaultVenueItemAPIURL      = "https://consumer-api.wolt.com/order-xp/web/v1/pages/venue/"
 	defaultRestaurantAPIURL     = "https://restaurant-api.wolt.com/v3/venues/"
 	defaultUserMeAPIURL         = "https://restaurant-api.wolt.com/v1/user/me"
 	defaultPaymentMethodsAPIURL = "https://restaurant-api.wolt.com/v3/user/me/payment_methods"
