@@ -44,9 +44,6 @@ func Build(
 	assortmentPayload := map[string]any{}
 
 	venueSlug := resolveBasketVenueSlug(venue)
-	if venuePageStatic == nil && wolt != nil {
-		venuePageStatic = wolt.VenuePageStatic
-	}
 	if venueSlug != "" && wolt != nil {
 		if payload, err := wolt.AssortmentByVenueSlug(ctx, venueSlug); err == nil {
 			assortmentPayload = payload
@@ -54,12 +51,6 @@ func Build(
 		} else {
 			warnings = append(warnings, fmt.Sprintf("unable to load venue assortment payload for category mapping (slug=%s)", venueSlug))
 		}
-		if venuePageStatic != nil {
-			if payload, err := venuePageStatic(ctx, venueSlug); err == nil {
-				mergeCheckoutCategoryIndexes(categoryIDsByItemID, buildCheckoutCategoryIDIndex(payload))
-			}
-		}
-	} else if venueSlug != "" && venuePageStatic != nil {
 		if payload, err := venuePageStatic(ctx, venueSlug); err == nil {
 			mergeCheckoutCategoryIndexes(categoryIDsByItemID, buildCheckoutCategoryIDIndex(payload))
 		}
