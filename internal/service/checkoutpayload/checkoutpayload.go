@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"regexp"
 	"strings"
 
 	"github.com/mekedron/wolt-cli/internal/domain"
 	woltgateway "github.com/mekedron/wolt-cli/internal/gateway/wolt"
 )
+
+var objectIDPattern = regexp.MustCompile(`^[a-f0-9]{24}$`)
 
 type VenuePageStaticFunc func(context.Context, string) (map[string]any, error)
 
@@ -28,7 +31,7 @@ func Build(
 		deliveryMode = "standard"
 	}
 	if deliveryMode != "standard" && deliveryMode != "priority" && deliveryMode != "schedule" {
-		return nil, nil, fmt.Errorf("unsupported delivery mode %q", deliveryMode)
+		return nil, nil, fmt.Errorf("unsupported --delivery-mode %q", deliveryMode)
 	}
 
 	venue := asMap(basket["venue"])
@@ -87,7 +90,7 @@ func Build(
 
 		categoryID := resolveCheckoutCategoryID(item, detail, itemID, categoryIDsByItemID)
 		if categoryID == "" {
-			if domain.LooksLikeObjectID(itemID) {
+			if looksLikeObjectID(itemID) {
 				categoryID = itemID
 				warnings = append(warnings, fmt.Sprintf("unable to resolve category_id for item %s; falling back to item id", itemID))
 			} else {
@@ -310,6 +313,10 @@ func mergeCheckoutCategoryIndexes(target map[string]string, source map[string]st
 		}
 		target[itemID] = categoryID
 	}
+}
+
+func looksLikeObjectID(value string) bool {
+	return objectIDPattern.MatchString(strings.ToLower(strings.TrimSpace(value)))
 }
 
 func resolveCheckoutCategoryIDs(item map[string]any, categoryID string) []any {

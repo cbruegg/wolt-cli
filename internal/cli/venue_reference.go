@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/mekedron/wolt-cli/internal/domain"
 	woltgateway "github.com/mekedron/wolt-cli/internal/gateway/wolt"
 	"github.com/mekedron/wolt-cli/internal/service/observability"
 )
@@ -36,7 +35,7 @@ func resolveItemReference(raw string) itemReference {
 	if value == "" {
 		return ref
 	}
-	if domain.LooksLikeObjectID(value) {
+	if looksLikeObjectID(value) {
 		ref.ItemID = value
 		return ref
 	}
@@ -73,7 +72,7 @@ func parseItemURL(parsed *url.URL) (slugHint, itemID string) {
 	if itemID == "" {
 		// Some URLs encode the item id as a query parameter (e.g. `?itemid=...`).
 		for _, key := range []string{"itemid", "item_id", "item"} {
-			if value := strings.TrimSpace(parsed.Query().Get(key)); domain.LooksLikeObjectID(value) {
+			if value := strings.TrimSpace(parsed.Query().Get(key)); looksLikeObjectID(value) {
 				itemID = value
 				break
 			}
@@ -99,7 +98,7 @@ func extractIDFromSegment(segment string) (string, bool) {
 	for _, prefix := range []string{"itemid-", "menuitem-", "item-"} {
 		if strings.HasPrefix(segment, prefix) {
 			candidate := strings.TrimPrefix(segment, prefix)
-			if domain.LooksLikeObjectID(candidate) {
+			if looksLikeObjectID(candidate) {
 				return candidate, true
 			}
 		}
@@ -118,7 +117,7 @@ func extractTrailingObjectID(path string) string {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	for i := len(parts) - 1; i >= 0; i-- {
 		segment := strings.TrimSpace(parts[i])
-		if domain.LooksLikeObjectID(segment) {
+		if looksLikeObjectID(segment) {
 			return segment
 		}
 		if id, ok := extractIDFromSegment(segment); ok {
@@ -244,7 +243,7 @@ func resolveVenueReference(ctx context.Context, deps Dependencies, raw string) (
 	if input == "" {
 		return ref, nil
 	}
-	if domain.LooksLikeObjectID(input) {
+	if looksLikeObjectID(input) {
 		ref.VenueID = input
 		if deps.Wolt != nil {
 			if restaurant, err := deps.Wolt.RestaurantByID(ctx, input); err == nil && restaurant != nil {
