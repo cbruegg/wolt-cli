@@ -296,6 +296,7 @@ func TestFlagHelpers(t *testing.T) {
 	flag := flagSet.Lookup("profile")
 	if flag == nil {
 		t.Fatal("profile flag not found")
+		return
 	}
 	flag.Annotations = map[string][]string{cobra.BashCompOneRequiredFlag: {"true"}}
 
