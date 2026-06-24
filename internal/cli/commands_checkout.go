@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"regexp"
 	"strings"
 
 	woltgateway "github.com/mekedron/wolt-cli/internal/gateway/wolt"
@@ -9,6 +10,8 @@ import (
 	"github.com/mekedron/wolt-cli/internal/service/output"
 	"github.com/spf13/cobra"
 )
+
+var objectIDPattern = regexp.MustCompile(`^[a-f0-9]{24}$`)
 
 func newCheckoutCommand(deps Dependencies) *cobra.Command {
 	checkout := newCheckoutPreviewCommand(deps)
@@ -186,6 +189,10 @@ func newCheckoutPreviewCommand(deps Dependencies) *cobra.Command {
 		lonSet = cmd.Flags().Changed("lon")
 	}
 	return cmd
+}
+
+func looksLikeObjectID(value string) bool {
+	return objectIDPattern.MatchString(strings.ToLower(strings.TrimSpace(value)))
 }
 
 func findTotalFormattedAmount(payload map[string]any) string {
