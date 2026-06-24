@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"strings"
 
 	woltgateway "github.com/mekedron/wolt-cli/internal/gateway/wolt"
@@ -97,6 +98,9 @@ func newCheckoutPreviewCommand(deps Dependencies) *cobra.Command {
 			checkoutPayload, checkoutWarnings, err := checkoutpayload.Build(
 				cmd.Context(),
 				deps.Wolt,
+				func(ctx context.Context, slug string) (map[string]any, error) {
+					return cachedVenuePageStatic(ctx, deps, slug)
+				},
 				basket,
 				location,
 				deliveryMode,

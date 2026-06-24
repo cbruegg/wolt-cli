@@ -10,10 +10,13 @@ import (
 	woltgateway "github.com/mekedron/wolt-cli/internal/gateway/wolt"
 )
 
+type VenuePageStaticFunc func(context.Context, string) (map[string]any, error)
+
 // Build constructs the current Wolt web checkout preview payload.
 func Build(
 	ctx context.Context,
 	wolt woltgateway.API,
+	venuePageStatic VenuePageStaticFunc,
 	basket map[string]any,
 	location domain.Location,
 	deliveryMode string,
@@ -41,6 +44,9 @@ func Build(
 	assortmentPayload := map[string]any{}
 
 	venueSlug := resolveBasketVenueSlug(venue)
+	if venuePageStatic == nil && wolt != nil {
+		venuePageStatic = wolt.VenuePageStatic
+	}
 	if venueSlug != "" && wolt != nil {
 		if payload, err := wolt.AssortmentByVenueSlug(ctx, venueSlug); err == nil {
 			assortmentPayload = payload
@@ -48,7 +54,13 @@ func Build(
 		} else {
 			warnings = append(warnings, fmt.Sprintf("unable to load venue assortment payload for category mapping (slug=%s)", venueSlug))
 		}
-		if payload, err := wolt.VenuePageStatic(ctx, venueSlug); err == nil {
+		if venuePageStatic != nil {
+			if payload, err := venuePageStatic(ctx, venueSlug); err == nil {
+				mergeCheckoutCategoryIndexes(categoryIDsByItemID, buildCheckoutCategoryIDIndex(payload))
+			}
+		}
+	} else if venueSlug != "" && venuePageStatic != nil {
+		if payload, err := venuePageStatic(ctx, venueSlug); err == nil {
 			mergeCheckoutCategoryIndexes(categoryIDsByItemID, buildCheckoutCategoryIDIndex(payload))
 		}
 	}
