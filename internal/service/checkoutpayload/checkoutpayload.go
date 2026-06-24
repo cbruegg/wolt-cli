@@ -32,9 +32,6 @@ func Build(
 	venueID := strings.TrimSpace(asString(venue["id"]))
 	currency := inferCurrency(asString(basket["total"]))
 	if currency == "" {
-		currency = strings.TrimSpace(asString(coalesceAny(basket["currency"], asMap(basket["total_price"])["currency"])))
-	}
-	if currency == "" {
 		currency = "EUR"
 	}
 	country := strings.TrimSpace(asString(venue["country"]))
@@ -100,55 +97,53 @@ func Build(
 
 		menuItems = append(menuItems, map[string]any{
 			"id":                                itemID,
+			"venue_id":                          venueID,
 			"count":                             count,
-			"options":                           options,
 			"base_price":                        price,
 			"end_amount":                        count * price,
+			"is_weighted_item":                  false,
 			"category_id":                       categoryID,
 			"category_ids":                      categoryIDs,
+			"alcohol_permille":                  asInt(coalesceAny(item["alcohol_permille"], 0)),
 			"exclude_from_credits":              asBool(coalesceAny(item["exclude_from_credits"], false)),
 			"exclude_from_discounts":            asBool(coalesceAny(item["exclude_from_discounts"], false)),
 			"exclude_from_discounts_min_basket": asBool(coalesceAny(item["exclude_from_discounts_min_basket"], false)),
-			"alcohol_permille":                  asInt(coalesceAny(item["alcohol_permille"], 0)),
 			"restrictions":                      coalesceAny(item["restrictions"], []any{}),
+			"age_limit":                         coalesceAny(item["age_limit"], nil),
+			"options":                           options,
 		})
 	}
 
-	purchasePlan := map[string]any{
-		"courier_tip": tip,
-		"delivery": map[string]any{
-			"delivery_coordinates": map[string]any{
-				"longitude": location.Lon,
-				"latitude":  location.Lat,
-			},
-		},
-		"delivery_method": "homedelivery",
-		"delivery_config": map[string]any{
-			"method":    "homedelivery",
-			"schedule":  deliveryMode,
-			"time_slot": nil,
-		},
-		"payment_methods":           []any{},
-		"menu_items":                menuItems,
-		"selected_offer_ids":        []any{},
-		"use_cash":                  false,
-		"use_credits_and_tokens":    true,
-		"use_loyalty_points_amount": 0,
-		"use_promo_surcharge_ids":   []any{},
-		"venue": map[string]any{
-			"id":       venueID,
-			"country":  country,
-			"currency": currency,
-		},
-	}
+	promoDiscountIDs := []any{}
 	if strings.TrimSpace(promoCode) != "" {
-		purchasePlan["use_promo_discount_ids"] = []any{strings.TrimSpace(promoCode)}
-	}
-	if deliveryMode == "priority" {
-		purchasePlan["is_priority_delivery"] = true
+		promoDiscountIDs = append(promoDiscountIDs, strings.TrimSpace(promoCode))
 	}
 
-	return map[string]any{"purchase_plan": purchasePlan}, warnings, nil
+	return map[string]any{
+		"purchase_plan": map[string]any{
+			"venue": map[string]any{
+				"id":       venueID,
+				"currency": currency,
+				"country":  country,
+			},
+			"delivery_method":           "homedelivery",
+			"menu_items":                menuItems,
+			"use_promo_discount_ids":    promoDiscountIDs,
+			"courier_tip":               tip,
+			"use_cash":                  false,
+			"use_credits_and_tokens":    false,
+			"use_loyalty_points_amount": 0,
+			"use_promo_surcharge_ids":   []any{},
+			"payment_methods":           []any{},
+			"is_priority_delivery":      deliveryMode == "priority",
+			"delivery": map[string]any{
+				"delivery_coordinates": map[string]any{
+					"latitude":  location.Lat,
+					"longitude": location.Lon,
+				},
+			},
+		},
+	}, warnings, nil
 }
 
 func resolveCheckoutCategoryID(item map[string]any, detail map[string]any, itemID string, fallback map[string]string) string {
