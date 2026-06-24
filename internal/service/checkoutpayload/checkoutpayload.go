@@ -4,14 +4,11 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"regexp"
 	"strings"
 
 	"github.com/mekedron/wolt-cli/internal/domain"
 	woltgateway "github.com/mekedron/wolt-cli/internal/gateway/wolt"
 )
-
-var objectIDPattern = regexp.MustCompile(`^[a-f0-9]{24}$`)
 
 // Build constructs the current Wolt web checkout preview payload.
 func Build(
@@ -90,7 +87,7 @@ func Build(
 
 		categoryID := resolveCheckoutCategoryID(item, detail, itemID, categoryIDsByItemID)
 		if categoryID == "" {
-			if looksLikeObjectID(itemID) {
+			if domain.LooksLikeObjectID(itemID) {
 				categoryID = itemID
 				warnings = append(warnings, fmt.Sprintf("unable to resolve category_id for item %s; falling back to item id", itemID))
 			} else {
@@ -315,10 +312,6 @@ func mergeCheckoutCategoryIndexes(target map[string]string, source map[string]st
 		}
 		target[itemID] = categoryID
 	}
-}
-
-func looksLikeObjectID(value string) bool {
-	return objectIDPattern.MatchString(strings.ToLower(strings.TrimSpace(value)))
 }
 
 func resolveCheckoutCategoryIDs(item map[string]any, categoryID string) []any {

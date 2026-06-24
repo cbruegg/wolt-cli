@@ -253,7 +253,7 @@ func newCartAddCommand(deps Dependencies) *cobra.Command {
 				if overrideSlug := strings.TrimSpace(venueSlug); overrideSlug != "" {
 					slugCandidates = append(slugCandidates, overrideSlug)
 				}
-				if ref := strings.TrimSpace(venueID); ref != "" && !looksLikeObjectID(ref) {
+				if ref := strings.TrimSpace(venueID); ref != "" && !domain.LooksLikeObjectID(ref) {
 					slugCandidates = append(slugCandidates, ref)
 				}
 				if restaurant, err := deps.Wolt.RestaurantByID(cmd.Context(), venueID); err == nil && restaurant != nil {
@@ -392,7 +392,7 @@ func newCartAddCommand(deps Dependencies) *cobra.Command {
 			// the basket count, but the basket never persists to the listable
 			// cart — a silent "phantom basket" (issue #19). Failing here is far
 			// better than reporting a fake success.
-			if !looksLikeObjectID(venueMutationID) {
+			if !domain.LooksLikeObjectID(venueMutationID) {
 				warnings = dedupeStrings(warnings)
 				return emitErrorWithWarnings(
 					cmd,

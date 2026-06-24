@@ -4,17 +4,11 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"regexp"
 	"strings"
 
+	"github.com/mekedron/wolt-cli/internal/domain"
 	woltgateway "github.com/mekedron/wolt-cli/internal/gateway/wolt"
 )
-
-var objectIDPattern = regexp.MustCompile(`^[a-f0-9]{24}$`)
-
-func looksLikeObjectID(value string) bool {
-	return objectIDPattern.MatchString(strings.ToLower(strings.TrimSpace(value)))
-}
 
 // venueRef captures the parts of a venue identity that downstream API calls
 // might need. After resolution, ID is always populated when possible.
@@ -55,7 +49,7 @@ func (tc *ToolCtx) resolveVenueRef(ctx context.Context, raw string) (venueRef, e
 		return venueRef{}, fmt.Errorf("venue identifier is required (slug, id, or wolt.com URL)")
 	}
 	ref := venueRef{Input: raw}
-	if looksLikeObjectID(input) {
+	if domain.LooksLikeObjectID(input) {
 		ref.ID = input
 		if tc.wolt != nil {
 			if restaurant, err := tc.wolt.RestaurantByID(ctx, input); err == nil && restaurant != nil {

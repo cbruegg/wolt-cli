@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -13,8 +12,6 @@ import (
 	"github.com/mekedron/wolt-cli/internal/service/output"
 	"github.com/spf13/cobra"
 )
-
-var woltVenueIDPattern = regexp.MustCompile(`^[a-fA-F0-9]{24}$`)
 
 type favoritesListOpts struct {
 	lat       float64
@@ -289,7 +286,7 @@ func resolveFavoriteVenueReference(
 	if candidate == "" {
 		return favoriteVenueReference{}, fmt.Errorf("venue id or slug is required")
 	}
-	if woltVenueIDPattern.MatchString(candidate) {
+	if domain.LooksLikeObjectID(candidate) {
 		return favoriteVenueReference{
 			VenueID: strings.ToLower(candidate),
 		}, nil

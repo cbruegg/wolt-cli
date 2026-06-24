@@ -156,7 +156,7 @@ func (tc *ToolCtx) handleCartAdd(ctx context.Context, _ *mcp.CallToolRequest, in
 	// return a success-shaped response and bump the basket count, but the
 	// basket never persists to the listable cart — a silent "phantom basket"
 	// (issue #19). Failing loudly beats reporting a fake success.
-	if !looksLikeObjectID(ref.ID) {
+	if !domain.LooksLikeObjectID(ref.ID) {
 		return nil, CartAddOutput{}, toolErrf(
 			"could not resolve %q to a Wolt venue id, so the item was NOT added (the basket would not persist); pass the 24-character venue id or a wolt.com venue URL",
 			in.Venue,
