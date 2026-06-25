@@ -14,8 +14,6 @@ type optionSelection struct {
 	Count   int
 }
 
-type optionGroupSpec = payloadutil.OptionGroupSpec
-
 func parseOptionSelections(raw []string) (map[string][]optionSelection, error) {
 	result := map[string][]optionSelection{}
 	for _, item := range raw {
@@ -110,7 +108,7 @@ func buildBasketOptions(itemPayload map[string]any, selections map[string][]opti
 	return options
 }
 
-func extractOptionSpecs(payload map[string]any) map[string]optionGroupSpec {
+func extractOptionSpecs(payload map[string]any) map[string]payloadutil.OptionGroupSpec {
 	return payloadutil.ExtractOptionSpecs(payload)
 }
 
@@ -247,7 +245,7 @@ func formatMinorAmount(amount int, currency string) string {
 	}
 }
 
-func resolveOptionGroupToken(token string, specs map[string]optionGroupSpec) string {
+func resolveOptionGroupToken(token string, specs map[string]payloadutil.OptionGroupSpec) string {
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return ""
@@ -263,7 +261,7 @@ func resolveOptionGroupToken(token string, specs map[string]optionGroupSpec) str
 	return ""
 }
 
-func resolveOptionValueToken(token string, group optionGroupSpec) string {
+func resolveOptionValueToken(token string, group payloadutil.OptionGroupSpec) string {
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return ""
