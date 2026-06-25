@@ -69,7 +69,7 @@ func (tc *ToolCtx) handleCheckoutPreview(ctx context.Context, _ *mcp.CallToolReq
 		deliveryMode = "standard"
 	}
 
-	payload, warnings, err := checkoutpayload.Build(ctx, tc.wolt, tc.wolt.VenuePageStatic, basket, loc, deliveryMode, in.Tip, in.PromoCode)
+	payload, _, err := checkoutpayload.Build(ctx, tc.wolt, tc.wolt.VenuePageStatic, basket, loc, deliveryMode, in.Tip, in.PromoCode)
 	if err != nil {
 		return nil, CheckoutPreviewOutput{}, toolErr(err)
 	}
@@ -79,9 +79,6 @@ func (tc *ToolCtx) handleCheckoutPreview(ctx context.Context, _ *mcp.CallToolReq
 	})
 	if err != nil {
 		return nil, CheckoutPreviewOutput{}, toolErr(err)
-	}
-	if len(warnings) > 0 {
-		preview["warnings"] = warnings
 	}
 	return nil, CheckoutPreviewOutput{
 		Summary: "checkout preview for venue " + ref.ID,
